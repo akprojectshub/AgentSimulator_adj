@@ -2,17 +2,29 @@ import pandas as pd
 from mesa import Agent, Model
 from mesa.time import BaseScheduler
 from mesa.datacollection import DataCollector
+import numpy as np
 
 from source.agents.contractor import ContractorAgent
 from source.agents.resource import ResourceAgent
 from source.utils import store_simulated_log
-
+import matplotlib.pyplot as plt
 
 def simulate_process(df_train, simulation_parameters, data_dir, num_simulations):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
+
     for i in range(num_simulations):
+
+        # Update simulation_parameters
+        simulation_parameters = update_simulation_parameters(simulation_parameters, i)
+
+        #from source.arrival_distribution import DistributionType
+        #test = DistributionType.TRIANGULAR
+        #from scipy.stats import triang, uniform, norm, expon, lognorm, gamma
+        #a = triang(1,3)
+
+
         # Create the model using the loaded data
         business_process_model = BusinessProcessModel(df_train, simulation_parameters)
 
@@ -33,6 +45,158 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
         simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
         # save log to csv
         store_simulated_log(data_dir, simulated_log, i)
+
+
+def update_simulation_parameters(simulation_parameters, sim_id):
+
+    # Update start timestamp and case arrival times
+    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=2000, rate_low=5, rate_high=20,
+                                                                             start_time=pd.Timestamp(
+                                                                                 '2025-01-01 00:00:00', tz='UTC'),
+                                                                             end_time=pd.Timestamp(
+                                                                                 '2025-12-31 23:59:59', tz='UTC'),
+                                                                             num_changes=sim_id + 1,
+                                                                             start_with_increase=((sim_id + 1) % 2 == 1))
+    plot_case_arrival_histogram(new_case_arrival_times, 100)
+    start_timestamp = new_case_arrival_times[0]
+    simulation_parameters['start_timestamp'] = start_timestamp
+    simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
+
+    # Update activity duration distributions
+    return simulation_parameters
+
+def plot_case_arrival_histogram(timestamps, bins=100):
+    plt.figure(figsize=(10, 5))
+    plt.hist(timestamps, bins=bins, edgecolor='black')
+    plt.xlabel('Time')
+    plt.ylabel('Number of Cases')
+    plt.title('Histogram of Case Arrivals Over Time')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_changes,
+                                                    start_time, end_time,
+                                                    start_with_increase=True):
+    """
+    Generate a list of N case arrival timestamps between two given times.
+
+    The arrival rate follows a pattern with a specified number of changes between
+    increasing and decreasing linear segments. Between each change, the rate is held
+    constant. The total time is split such that the duration spent changing rates equals
+    the duration spent at constant rates.
+
+    Parameters:
+        N (int): Total number of arrival timestamps to generate.
+        rate_low (float): The lower bound of the arrival rate (cases per second).
+        rate_high (float): The upper bound of the arrival rate (cases per second).
+        num_changes (int): The number of rate changes (alternating increase/decrease).
+        start_time (pd.Timestamp): The starting timestamp for the first case.
+        end_time (pd.Timestamp): The ending timestamp for the last case.
+        start_with_increase (bool): If True, the first change will increase from
+            rate_low to rate_high. If False, it will decrease from rate_high to rate_low.
+
+    Returns:
+        List[pd.Timestamp]: A list of N pandas Timestamps representing the arrival times
+        of the cases, spread between start_time and end_time according to the described pattern.
+    """
+
+    # Validate input parameters
+    if num_changes < 1:
+        raise ValueError("'num_changes' must be at least 1")
+    if rate_high <= rate_low:
+        raise ValueError("'rate_high' must be greater than 'rate_low'")
+    if end_time <= start_time:
+        raise ValueError("'end_time' must be after 'start_time'")
+
+    total_duration_seconds = (end_time - start_time).total_seconds()
+
+    change_segments = []
+    fixed_segments = []
+
+    current_is_increase = start_with_increase
+
+    # Define the initial constant rate segment based on whether we start with an increase or decrease
+    if start_with_increase:
+        pattern = [lambda t: rate_low]  # Start flat at low rate
+    else:
+        pattern = [lambda t: rate_high]  # Start flat at high rate
+
+    # Create alternating increase/decrease and flat segments
+    for _ in range(num_changes):
+        if current_is_increase:
+            change_segments.append(lambda t, low=rate_low, high=rate_high: low + (high - low) * t)
+            fixed_segments.append(lambda t: rate_high)
+        else:
+            change_segments.append(lambda t, low=rate_low, high=rate_high: high - (high - low) * t)
+            fixed_segments.append(lambda t: rate_low)
+        current_is_increase = not current_is_increase
+
+    # Interleave change and fixed segments into the full rate pattern
+    for change, fixed in zip(change_segments, fixed_segments):
+        pattern.append(change)
+        pattern.append(fixed)
+
+    # Compute the number of segments
+    total_segments = len(pattern)
+    num_change_segments = len(change_segments)
+    num_fixed_segments = total_segments - num_change_segments
+
+    # Assign half of the total duration to change segments and the other half to fixed segments
+    change_duration = 0.5 * total_duration_seconds / num_change_segments
+    fixed_duration = 0.5 * total_duration_seconds / num_fixed_segments
+
+    # Assign durations to each segment based on its type
+    durations = [fixed_duration if i % 2 == 0 else change_duration for i in range(total_segments)]
+
+    # Estimate how many cases should appear in each segment
+    segment_cases = []
+    total_expected_cases = 0
+    for f, d in zip(pattern, durations):
+        t = np.linspace(0, 1, 100)  # Normalized time points within the segment
+        r = np.array([f(x) for x in t])  # Rates at each time point
+        segment_total = np.trapz(r, t) * d  # Approximate total cases via integration
+        segment_cases.append(segment_total)
+        total_expected_cases += segment_total
+
+    # Scale the number of cases to match the desired total N
+    scale = N / total_expected_cases
+    segment_cases = [int(round(c * scale)) for c in segment_cases]
+
+    # Generate timestamps by simulating inter-arrival times
+    timestamps = []
+    current_offset = 0.0
+    for f, duration, count in zip(pattern, durations, segment_cases):
+        if count == 0:
+            continue
+        t = np.linspace(0, 1, count + 1)[:-1]  # Normalized positions
+        rates = np.array([f(x) for x in t])  # Compute instantaneous rate
+        inter_arrivals = 1.0 / rates  # Compute time gaps between arrivals
+        segment_times = np.cumsum(inter_arrivals)  # Cumulative arrival times
+        segment_times *= duration / segment_times[-1]  # Normalize to fit the segment duration
+        segment_times += current_offset  # Shift by current time offset
+        current_offset += duration  # Update offset for next segment
+        for seconds in segment_times:
+            timestamps.append(start_time + pd.to_timedelta(seconds, unit='s'))  # Convert to absolute timestamp
+
+    return timestamps[:N]
+
+
+# timestamps = generate_arrivals_case_timestamps(N=1000, X=5, Y=20, num_cycles=3)
+#
+# # Plot histogram
+# plt.figure(figsize=(10, 5))
+# plt.hist(timestamps, bins=50, edgecolor='black')
+# plt.xlabel('Time')
+# plt.ylabel('Number of Cases')
+# plt.title('Histogram of Case Arrivals Over Time')
+# plt.grid(True)
+# plt.tight_layout()
+# plt.show()
+
+
+
 
 class Case:
     """

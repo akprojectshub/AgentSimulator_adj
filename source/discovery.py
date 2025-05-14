@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from source.utils import store_preprocessed_data
 from source.agent_types.discover_roles import discover_roles_and_calendars
 from source.agent_types.discover_resource_calendar import discover_calendar_per_agent
@@ -25,16 +24,22 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     START_TIME = min(df_test.groupby('case_id')['start_timestamp'].min().to_list())
     START_TIME_VAL = min(df_val.groupby('case_id')['start_timestamp'].min().to_list())
 
-
+    print("finished 1")
     df_train_without_end_activity = store_preprocessed_data(df_train, df_test, df_val, data_dir)
+    print("finished 2")
 
     activities_without_waiting_time = activities_with_zero_waiting_time(df_train)
+    print("finished 2->3")
 
     # extract roles and calendars  
     roles = discover_roles_and_calendars(df_train_without_end_activity)
+    print("finished 3.0")
+
     res_calendars, _, _, _, _ = discover_calendar_per_agent(df_train_without_end_activity)
+    print("finished 3.1")
 
     activity_durations_dict = compute_activity_duration_distribution_per_agent(df_train, res_calendars, roles)
+    print("finished 3.2")
 
     # define mapping of agents to activities based on event log
     agent_activity_mapping = df_train.groupby('agent')['activity_name'].unique().apply(list).to_dict()
@@ -45,20 +50,18 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     transition_probabilities = compute_activity_transition_dict_global(df_train)
 
     prerequisites, parallel_activities = get_prerequisites_per_activity(df_train)
+    print("finished 4")
 
     # get maximum activity frequency per case
     activity_counts = df_train.groupby(['case_id', 'activity_name']).size().reset_index(name='count')
     max_activity_count_per_case = activity_counts.groupby('activity_name')['count'].max().to_dict()
 
+    print("finished 5")
 
     # sample arrival times for training and validation data
     case_arrival_times, train_params = get_case_arrival_times(df_train, start_timestamp=START_TIME, num_cases_to_simulate=num_cases_to_simulate, train=True)
     case_arrival_times_val, _ = get_case_arrival_times(df_val, start_timestamp=START_TIME_VAL, num_cases_to_simulate=num_cases_to_simulate_val, train=False, train_params=train_params)
-
-    # Update the case_arrival_times
-    case_arrival_times_test = generate_arrivals_case_timestamps_between_times(N=len(case_arrival_times), X=5, Y=20, start_time=case_arrival_times[0],
-                                                                 end_time=case_arrival_times[-1], num_changes=1,
-                                                                 start_with_increase=True)
+    print("finished 6")
 
     simulation_parameters = {
         'activity_durations_dict': activity_durations_dict,
@@ -780,84 +783,4 @@ def determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, d
     return simulation_parameters
 
 
-def generate_arrivals_case_timestamps_between_times(N, X, Y, num_changes,
-                                                     start_time, end_time,
-                                                     start_with_increase=True):
-    if num_changes < 1:
-        raise ValueError("num_changes must be at least 1")
-    if Y <= X:
-        raise ValueError("Y must be greater than X")
-    if end_time <= start_time:
-        raise ValueError("end_time must be after start_time")
-
-    total_duration_seconds = (end_time - start_time).total_seconds()
-
-    change_segments = []
-    fixed_segments = []
-
-    current_is_increase = start_with_increase
-    for _ in range(num_changes):
-        if current_is_increase:
-            change_segments.append(lambda t, X=X, Y=Y: X + (Y - X) * t)
-            fixed_segments.append(lambda t: Y)
-        else:
-            change_segments.append(lambda t, X=X, Y=Y: Y - (Y - X) * t)
-            fixed_segments.append(lambda t: X)
-        current_is_increase = not current_is_increase
-
-    pattern = [lambda t: X]
-    for change, fixed in zip(change_segments, fixed_segments):
-        pattern.append(change)
-        pattern.append(fixed)
-
-    total_segments = len(pattern)
-    num_change_segments = len(change_segments)
-    num_fixed_segments = total_segments - num_change_segments
-
-    change_duration = 0.5 * total_duration_seconds / num_change_segments
-    fixed_duration = 0.5 * total_duration_seconds / num_fixed_segments
-
-    durations = [fixed_duration if i % 2 == 0 else change_duration for i in range(total_segments)]
-
-    segment_cases = []
-    total_expected_cases = 0
-    for f, d in zip(pattern, durations):
-        t = np.linspace(0, 1, 100)
-        r = np.array([f(x) for x in t])
-        segment_total = np.trapz(r, t) * d
-        segment_cases.append(segment_total)
-        total_expected_cases += segment_total
-
-    scale = N / total_expected_cases
-    segment_cases = [int(round(c * scale)) for c in segment_cases]
-
-    timestamps = []
-    current_offset = 0.0
-    for f, duration, count in zip(pattern, durations, segment_cases):
-        if count == 0:
-            continue
-        t = np.linspace(0, 1, count + 1)[:-1]
-        rates = np.array([f(x) for x in t])
-        inter_arrivals = 1.0 / rates
-        segment_times = np.cumsum(inter_arrivals)
-        segment_times *= duration / segment_times[-1]
-        segment_times += current_offset
-        current_offset += duration
-        for seconds in segment_times:
-            timestamps.append(start_time + pd.to_timedelta(seconds, unit='s'))
-
-    return timestamps[:N]
-
-
-# timestamps = generate_arrivals_case_timestamps(N=1000, X=5, Y=20, num_cycles=3)
-#
-# # Plot histogram
-# plt.figure(figsize=(10, 5))
-# plt.hist(timestamps, bins=50, edgecolor='black')
-# plt.xlabel('Time')
-# plt.ylabel('Number of Cases')
-# plt.title('Histogram of Case Arrivals Over Time')
-# plt.grid(True)
-# plt.tight_layout()
-# plt.show()
 
