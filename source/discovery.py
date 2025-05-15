@@ -1,4 +1,6 @@
 import pandas as pd
+import pickle
+import os
 from source.utils import store_preprocessed_data
 from source.agent_types.discover_roles import discover_roles_and_calendars
 from source.agent_types.discover_resource_calendar import discover_calendar_per_agent
@@ -18,74 +20,118 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     """
     Discover the simulation model from the training data.
     """
-    df_train, agent_to_resource = preprocess(df_train)
-    df_test, _ = preprocess(df_test)
-    df_val, _ = preprocess(df_val)
-    START_TIME = min(df_test.groupby('case_id')['start_timestamp'].min().to_list())
-    START_TIME_VAL = min(df_val.groupby('case_id')['start_timestamp'].min().to_list())
+    simulation_parameters = None
+    #simulation_parameters = load_simulation_parameters_pickle(data_dir)
+    if simulation_parameters is None:
+        df_train, agent_to_resource = preprocess(df_train)
+        df_test, _ = preprocess(df_test)
+        df_val, _ = preprocess(df_val)
+        START_TIME = min(df_test.groupby('case_id')['start_timestamp'].min().to_list())
+        START_TIME_VAL = min(df_val.groupby('case_id')['start_timestamp'].min().to_list())
 
-    print("finished 1")
-    df_train_without_end_activity = store_preprocessed_data(df_train, df_test, df_val, data_dir)
-    print("finished 2")
+        print("finished 1")
+        df_train_without_end_activity = store_preprocessed_data(df_train, df_test, df_val, data_dir)
+        print("finished 2")
 
-    activities_without_waiting_time = activities_with_zero_waiting_time(df_train)
-    print("finished 2->3")
+        activities_without_waiting_time = activities_with_zero_waiting_time(df_train)
+        print("finished 2->3")
 
-    # extract roles and calendars  
-    roles = discover_roles_and_calendars(df_train_without_end_activity)
-    print("finished 3.0")
+        # extract roles and calendars
+        roles = discover_roles_and_calendars(df_train_without_end_activity)
+        print("finished 3.0")
 
-    res_calendars, _, _, _, _ = discover_calendar_per_agent(df_train_without_end_activity)
-    print("finished 3.1")
+        res_calendars, _, _, _, _ = discover_calendar_per_agent(df_train_without_end_activity)
+        print("finished 3.1")
 
-    activity_durations_dict = compute_activity_duration_distribution_per_agent(df_train, res_calendars, roles)
-    print("finished 3.2")
+        activity_durations_dict = compute_activity_duration_distribution_per_agent(df_train, res_calendars, roles)
+        print("finished 3.2")
 
-    # define mapping of agents to activities based on event log
-    agent_activity_mapping = df_train.groupby('agent')['activity_name'].unique().apply(list).to_dict()
+        # define mapping of agents to activities based on event log
+        agent_activity_mapping = df_train.groupby('agent')['activity_name'].unique().apply(list).to_dict()
 
-    transition_probabilities_autonomous = compute_activity_transition_dict(df_train)
-    agent_transition_probabilities_autonomous = calculate_agent_handover_probabilities_per_activity(df_train)
-    agent_transition_probabilities = None
-    transition_probabilities = compute_activity_transition_dict_global(df_train)
+        transition_probabilities_autonomous = compute_activity_transition_dict(df_train)
+        agent_transition_probabilities_autonomous = calculate_agent_handover_probabilities_per_activity(df_train)
+        agent_transition_probabilities = None
+        transition_probabilities = compute_activity_transition_dict_global(df_train)
 
-    prerequisites, parallel_activities = get_prerequisites_per_activity(df_train)
-    print("finished 4")
+        prerequisites, parallel_activities = get_prerequisites_per_activity(df_train)
+        print("finished 4")
 
-    # get maximum activity frequency per case
-    activity_counts = df_train.groupby(['case_id', 'activity_name']).size().reset_index(name='count')
-    max_activity_count_per_case = activity_counts.groupby('activity_name')['count'].max().to_dict()
+        # get maximum activity frequency per case
+        activity_counts = df_train.groupby(['case_id', 'activity_name']).size().reset_index(name='count')
+        max_activity_count_per_case = activity_counts.groupby('activity_name')['count'].max().to_dict()
 
-    print("finished 5")
+        print("finished 5")
 
-    # sample arrival times for training and validation data
-    case_arrival_times, train_params = get_case_arrival_times(df_train, start_timestamp=START_TIME, num_cases_to_simulate=num_cases_to_simulate, train=True)
-    case_arrival_times_val, _ = get_case_arrival_times(df_val, start_timestamp=START_TIME_VAL, num_cases_to_simulate=num_cases_to_simulate_val, train=False, train_params=train_params)
-    print("finished 6")
+        # sample arrival times for training and validation data
+        case_arrival_times, train_params = get_case_arrival_times(df_train, start_timestamp=START_TIME, num_cases_to_simulate=num_cases_to_simulate, train=True)
+        case_arrival_times_val, _ = get_case_arrival_times(df_val, start_timestamp=START_TIME_VAL, num_cases_to_simulate=num_cases_to_simulate_val, train=False, train_params=train_params)
+        print("finished 6")
 
-    simulation_parameters = {
-        'activity_durations_dict': activity_durations_dict,
-        'activities_without_waiting_time': activities_without_waiting_time,
-        'roles': roles,
-        'res_calendars': res_calendars,
-        'agent_activity_mapping': agent_activity_mapping,
-        'transition_probabilities_autonomous': transition_probabilities_autonomous,
-        'agent_transition_probabilities_autonomous': agent_transition_probabilities_autonomous,
-        'agent_transition_probabilities': agent_transition_probabilities,
-        'transition_probabilities': transition_probabilities,
-        'max_activity_count_per_case': max_activity_count_per_case,
-        'case_arrival_times': case_arrival_times,
-        'case_arrival_times_val': case_arrival_times_val,
-        'agent_to_resource': agent_to_resource,
-        'determine_automatically': determine_automatically,
-        'prerequisites': prerequisites,
-    }
+        simulation_parameters = {
+            'activity_durations_dict': activity_durations_dict,
+            'activities_without_waiting_time': activities_without_waiting_time,
+            'roles': roles,
+            'res_calendars': res_calendars,
+            'agent_activity_mapping': agent_activity_mapping,
+            'transition_probabilities_autonomous': transition_probabilities_autonomous,
+            'agent_transition_probabilities_autonomous': agent_transition_probabilities_autonomous,
+            'agent_transition_probabilities': agent_transition_probabilities,
+            'transition_probabilities': transition_probabilities,
+            'max_activity_count_per_case': max_activity_count_per_case,
+            'case_arrival_times': case_arrival_times,
+            'case_arrival_times_val': case_arrival_times_val,
+            'agent_to_resource': agent_to_resource,
+            'determine_automatically': determine_automatically,
+            'prerequisites': prerequisites,
+        }
 
-    simulation_parameters = determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, df_train, df_val, case_arrival_times_val, central_orchestration, discover_extr_delays)
-    simulation_parameters['start_timestamp'] = START_TIME
+        simulation_parameters = determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, df_train, df_val, case_arrival_times_val, central_orchestration, discover_extr_delays)
+        simulation_parameters['start_timestamp'] = START_TIME
 
+        # save simulation_parameters
+        save_simulation_parameters(simulation_parameters, data_dir)
 
     return df_train, simulation_parameters
+
+
+
+def load_simulation_parameters_pickle(data_dir):
+    """Load simulation parameters from a pickle file in the given directory.
+
+    Returns the dictionary if successful, otherwise returns None.
+    """
+    pkl_path = os.path.join(data_dir, "simulation_parameters.pkl")
+
+    if os.path.isfile(pkl_path):
+        try:
+            with open(pkl_path, "rb") as pkl_file:
+                return pickle.load(pkl_file)
+        except Exception as e:
+            print(f"Error loading pickle file: {e}")
+            return None
+    else:
+        print("Pickle file not found.")
+        return None
+
+
+def save_simulation_parameters(simulation_parameters, data_dir, option='pkl'):
+    """Save the simulation_parameters dictionary to a text and pickle file in the specified directory."""
+    os.makedirs(data_dir, exist_ok=True)
+
+    if option=="pkl":
+        pkl_path = os.path.join(data_dir, "simulation_parameters.pkl")
+        with open(pkl_path, "wb") as pkl_file:
+            pickle.dump(simulation_parameters, pkl_file)
+    else:
+        txt_path = os.path.join(data_dir, "simulation_parameters.txt")
+
+        with open(txt_path, "w") as file:
+            for key, value in simulation_parameters.items():
+                file.write(f"{key}: {value}\n")
+
+
+
 
 def preprocess(df):
     """
