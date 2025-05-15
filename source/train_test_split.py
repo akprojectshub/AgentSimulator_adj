@@ -85,4 +85,4 @@ def split_data(PATH_LOG, column_names, PATH_LOG_test=None):
 
     number_test_cases = len(set(df_test['case_id']))
 
-    return df_train_big, df_test, number_test_cases
+    return df_train_big, df_test, number_test_cases, df

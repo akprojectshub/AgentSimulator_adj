@@ -50,13 +50,14 @@ class AgentSimulator:
             else:
                 file_name_extension = 'autonomous'
         if self.params['train_and_test']:
-            df_train, df_test, num_cases_to_simulate = split_data(self.params['PATH_LOG'], self.params['column_names'], self.params['PATH_LOG_test'])
+            df_train, df_test, num_cases_to_simulat, df = split_data(self.params['PATH_LOG'], self.params['column_names'], self.params['PATH_LOG_test'])
         else:
-            df_train, df_test, num_cases_to_simulate = split_data(self.params['PATH_LOG'], self.params['column_names'])
+            df_train, df_test, num_cases_to_simulate, df = split_data(self.params['PATH_LOG'], self.params['column_names'])
 
         self.data_dir = os.path.join(os.getcwd(), "simulated_data", file_name, file_name_extension)
 
         df_val = get_validation_data(df_train)
         num_cases_to_simulate_val = len(set(df_val['case_id']))
 
-        return df_train, df_test, num_cases_to_simulate, df_val, num_cases_to_simulate_val
+        #return df_train, df_test, num_cases_to_simulate, df_val, num_cases_to_simulate_val
+        return df, df, len(set(df['case_id'])), df, len(set(df['case_id']))
