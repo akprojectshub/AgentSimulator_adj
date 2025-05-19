@@ -8,6 +8,8 @@ from source.agents.contractor import ContractorAgent
 from source.agents.resource import ResourceAgent
 from source.utils import store_simulated_log
 import matplotlib.pyplot as plt
+from source.arrival_distribution import DurationDistribution
+
 
 def simulate_process(df_train, simulation_parameters, data_dir, num_simulations):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
@@ -19,13 +21,7 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
         # Update simulation_parameters
         simulation_parameters = update_simulation_parameters(simulation_parameters, i)
 
-        #from source.arrival_distribution import DistributionType
-        #test = DistributionType.TRIANGULAR
-        #from scipy.stats import triang, uniform, norm, expon, lognorm, gamma
-        #a = triang(1,3)
-
-
-        # Create the model using the loaded data
+          # Create the model using the loaded data
         business_process_model = BusinessProcessModel(df_train, simulation_parameters)
 
         # define list of cases
@@ -50,20 +46,42 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
 def update_simulation_parameters(simulation_parameters, sim_id):
 
     # Update start timestamp and case arrival times
-    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=2000, rate_low=5, rate_high=20,
+    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=2001, rate_low=10, rate_high=40,
                                                                              start_time=pd.Timestamp(
                                                                                  '2025-01-01 00:00:00', tz='UTC'),
                                                                              end_time=pd.Timestamp(
                                                                                  '2025-12-31 23:59:59', tz='UTC'),
                                                                              num_changes=sim_id + 1,
                                                                              start_with_increase=((sim_id + 1) % 2 == 1))
-    plot_case_arrival_histogram(new_case_arrival_times, 100)
+    plot_case_arrival_histogram(new_case_arrival_times, 200)
     start_timestamp = new_case_arrival_times[0]
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
     # Update activity duration distributions
+    #new_dist =DurationDistribution("uniform", 120, 20, 20, 60, 180)
+    new_dist = DurationDistribution("exponential", 7200, 180, 180, 0, None)
+    simulation_parameters['activity_durations_dict'] = replace_distributions(simulation_parameters['activity_durations_dict'], new_dist)
+
     return simulation_parameters
+
+def replace_distributions(distribution_dict, new_distribution):
+    """
+    Replaces all values in a nested dictionary structure with the given distribution.
+
+    Parameters:
+    - distribution_dict (dict): Dictionary of the form {int: {str: DurationDistribution}}
+    - new_distribution (object): New distribution object to assign to all keys
+
+    Returns:
+    - dict: Modified dictionary with updated distribution objects
+    """
+    for outer_key in distribution_dict:
+        inner_dict = distribution_dict[outer_key]
+        for inner_key in inner_dict:
+            inner_dict[inner_key] = new_distribution
+    return distribution_dict
+
 
 def plot_case_arrival_histogram(timestamps, bins=100):
     plt.figure(figsize=(10, 5))
@@ -258,6 +276,7 @@ class BusinessProcessModel(Model):
         self.schedule.add(self.contractor_agent)
 
         for agent_id in range(len(self.resources)):
+            # TODO
             agent = ResourceAgent(agent_id, self, self.resources[agent_id], self.timer, self.contractor_agent)
             self.schedule.add(agent)
 
