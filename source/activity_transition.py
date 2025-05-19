@@ -69,7 +69,8 @@ def create_sequences(df):
 
 # Function to create sequences of activities for each case
 def create_sequences_global(df):
-    df = df.sort_values(by=['case_id', 'start_timestamp'])
+    #df = df.sort_values(by=['case_id', 'start_timestamp'])
+    df = df.sort_values(by=['case_id', 'end_timestamp'])
     sequences = []
     for case_id, group in df.groupby('case_id'):
         sequences.append(list(group['activity_name']))
