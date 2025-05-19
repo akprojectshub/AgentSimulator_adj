@@ -22,7 +22,9 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     """
     simulation_parameters = None
     #simulation_parameters = load_simulation_parameters_pickle(data_dir)
-    if simulation_parameters is None:
+    if simulation_parameters is not None:
+        df_train, agent_to_resource = preprocess(df_train)
+    else:
         df_train, agent_to_resource = preprocess(df_train)
         df_test, _ = preprocess(df_test)
         df_val, _ = preprocess(df_val)
