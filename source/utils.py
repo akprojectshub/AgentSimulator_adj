@@ -1,5 +1,7 @@
 import os
 import math
+import pickle
+
 import scipy.stats as st
 
 def store_preprocessed_data(df_train, df_test, df_val, data_dir):
@@ -61,3 +63,35 @@ def sample_from_distribution(distribution):
         sample = [distribution.mean] * 1
 
     return sample[0]
+
+
+def save_simulation_parameters_original(simulation_parameters, data_dir, option='pkl'):
+    """Save the simulation_parameters dictionary to a text and pickle file in the specified directory."""
+    os.makedirs(data_dir, exist_ok=True)
+
+    if option=="pkl":
+        pkl_path = os.path.join(data_dir, "simulation_parameters_original_bimp.pkl")
+        with open(pkl_path, "wb") as pkl_file:
+            pickle.dump(simulation_parameters, pkl_file)
+    else:
+        txt_path = os.path.join(data_dir, "simulation_parameters_original_bimp.txt")
+
+        with open(txt_path, "w") as file:
+            for key, value in simulation_parameters.items():
+                file.write(f"{key}: {value}\n")
+
+
+def save_simulation_parameters_for_scenario(simulation_parameters, data_dir, scenario_id, option='pkl'):
+    """Save the simulation_parameters dictionary to a text and pickle file in the specified directory."""
+    os.makedirs(data_dir, exist_ok=True)
+
+    if option=="pkl":
+        pkl_path = os.path.join(data_dir, f"simulation_parameters_scenario_{scenario_id}.pkl")
+        with open(pkl_path, "wb") as pkl_file:
+            pickle.dump(simulation_parameters, pkl_file)
+    else:
+        txt_path = os.path.join(data_dir, f"simulation_parameters_scenario_{scenario_id}.txt")
+
+        with open(txt_path, "w") as file:
+            for key, value in simulation_parameters.items():
+                file.write(f"{key}: {value}\n")

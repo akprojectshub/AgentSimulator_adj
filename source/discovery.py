@@ -1,7 +1,7 @@
 import pandas as pd
 import pickle
 import os
-from source.utils import store_preprocessed_data
+from source.utils import store_preprocessed_data, save_simulation_parameters_original
 from source.agent_types.discover_roles import discover_roles_and_calendars
 from source.agent_types.discover_resource_calendar import discover_calendar_per_agent
 from source.arrival_distribution import get_best_fitting_distribution
@@ -21,7 +21,7 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     Discover the simulation model from the training data.
     """
     simulation_parameters = None
-    #simulation_parameters = load_simulation_parameters_pickle(data_dir)
+    simulation_parameters = load_simulation_parameters_pickle(data_dir)
     if simulation_parameters is not None:
         df_train, agent_to_resource = preprocess(df_train)
     else:
@@ -92,7 +92,7 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
         simulation_parameters['start_timestamp'] = START_TIME
 
         # save simulation_parameters
-        save_simulation_parameters(simulation_parameters, data_dir)
+        save_simulation_parameters_original(simulation_parameters, data_dir)
 
     return df_train, simulation_parameters
 
@@ -103,7 +103,7 @@ def load_simulation_parameters_pickle(data_dir):
 
     Returns the dictionary if successful, otherwise returns None.
     """
-    pkl_path = os.path.join(data_dir, "simulation_parameters.pkl")
+    pkl_path = os.path.join(data_dir, "simulation_parameters_original_bimp.pkl")
 
     if os.path.isfile(pkl_path):
         try:
@@ -115,24 +115,6 @@ def load_simulation_parameters_pickle(data_dir):
     else:
         print("Pickle file not found.")
         return None
-
-
-def save_simulation_parameters(simulation_parameters, data_dir, option='pkl'):
-    """Save the simulation_parameters dictionary to a text and pickle file in the specified directory."""
-    os.makedirs(data_dir, exist_ok=True)
-
-    if option=="pkl":
-        pkl_path = os.path.join(data_dir, "simulation_parameters.pkl")
-        with open(pkl_path, "wb") as pkl_file:
-            pickle.dump(simulation_parameters, pkl_file)
-    else:
-        txt_path = os.path.join(data_dir, "simulation_parameters.txt")
-
-        with open(txt_path, "w") as file:
-            for key, value in simulation_parameters.items():
-                file.write(f"{key}: {value}\n")
-
-
 
 
 def preprocess(df):
