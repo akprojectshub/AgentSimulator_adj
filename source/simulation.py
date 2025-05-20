@@ -10,19 +10,20 @@ from source.agents.resource import ResourceAgent
 from source.utils import store_simulated_log
 import matplotlib.pyplot as plt
 from source.arrival_distribution import DurationDistribution
-
+from source.utils import save_simulation_parameters_for_scenario
 
 def simulate_process(df_train, simulation_parameters, data_dir, num_simulations):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
-    for i in range(num_simulations):
+    for scenario_id in range(num_simulations):
 
         # Update simulation_parameters
-        simulation_parameters = update_simulation_parameters(simulation_parameters, i)
+        simulation_parameters = update_simulation_parameters(simulation_parameters, scenario_id)
+        save_simulation_parameters_for_scenario(simulation_parameters, data_dir, scenario_id)
 
-          # Create the model using the loaded data
+        # Create the model using the loaded data
         business_process_model = BusinessProcessModel(df_train, simulation_parameters)
 
         # define list of cases
@@ -41,30 +42,38 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
         # add resource column
         simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
         # save log to csv
-        store_simulated_log(data_dir, simulated_log, i)
+        store_simulated_log(data_dir, simulated_log, scenario_id)
 
 
-def update_simulation_parameters(simulation_parameters, sim_id):
+def update_case_arrivals(simulation_parameters, sim_id):
 
-    # Update start timestamp and case arrival times
-    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=10001, rate_low=10, rate_high=40,
+    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=2001, rate_low=10, rate_high=40,
                                                                              start_time=pd.Timestamp(
                                                                                  '2025-01-01 00:00:00', tz='UTC'),
                                                                              end_time=pd.Timestamp(
                                                                                  '2025-12-31 23:59:59', tz='UTC'),
-                                                                             num_changes=sim_id + 5,
+                                                                             num_changes=sim_id + 1,
                                                                              start_with_increase=((sim_id + 1) % 2 == 1))
+    simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
+    simulation_parameters['case_arrival_times'] = new_case_arrival_times
+    #plot_case_arrival_histogram(new_case_arrival_times, 200)
 
-    plot_case_arrival_histogram(new_case_arrival_times, 200)
-    start_timestamp = new_case_arrival_times[0]
-    simulation_parameters['start_timestamp'] = start_timestamp
-    simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
+    return simulation_parameters
 
-    # Update activity duration distributions
+
+def update_task_duration_dist(simulation_parameters):
+
     #new_dist =DurationDistribution("uniform", 120, 20, 20, 60, 180)
-    new_dist = DurationDistribution("exponential", 7200, 180, 180, 0, None)
-    simulation_parameters['activity_durations_dict'] = replace_distributions(simulation_parameters['activity_durations_dict'], new_dist)
+    new_dist = DurationDistribution("exponential", 7200, None, None, 0, None)
+    updated_dist = replace_distributions(simulation_parameters['activity_durations_dict'], new_dist)
+    simulation_parameters['activity_durations_dict'] = updated_dist
 
+    return simulation_parameters
+
+def update_simulation_parameters(simulation_parameters, sim_id):
+
+    simulation_parameters = update_case_arrivals(simulation_parameters, sim_id)
+    simulation_parameters = update_task_duration_dist(simulation_parameters)
     return simulation_parameters
 
 def replace_distributions(distribution_dict, new_distribution):
