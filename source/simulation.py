@@ -1,4 +1,7 @@
 import pandas as pd
+import yaml
+import pandas as pd
+from pathlib import Path
 from mesa import Agent, Model
 from mesa.time import BaseScheduler
 from mesa.datacollection import DataCollector
@@ -45,15 +48,20 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
         store_simulated_log(data_dir, simulated_log, scenario_id)
 
 
-def update_case_arrivals(simulation_parameters, sim_id):
+def update_case_arrivals(simulation_parameters, sim_id, arrival_config):
+    start_time = pd.Timestamp(arrival_config["start_time"], tz='UTC')
+    end_time = pd.Timestamp(arrival_config["end_time"], tz='UTC')
 
-    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=2001, rate_low=10, rate_high=40,
-                                                                             start_time=pd.Timestamp(
-                                                                                 '2025-01-01 00:00:00', tz='UTC'),
-                                                                             end_time=pd.Timestamp(
-                                                                                 '2025-12-31 23:59:59', tz='UTC'),
-                                                                             num_changes=sim_id + 1,
-                                                                             start_with_increase=((sim_id + 1) % 2 == 1))
+    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(
+        N=arrival_config["N"],
+        rate_low=arrival_config["rate_low"],
+        rate_high=arrival_config["rate_high"],
+        start_time=start_time,
+        end_time=end_time,
+        num_changes=sim_id + 1,
+        start_with_increase=((sim_id + 1) % 2 == 1)
+    )
+
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
     simulation_parameters['case_arrival_times'] = new_case_arrival_times
     #plot_case_arrival_histogram(new_case_arrival_times, 200)
@@ -61,19 +69,32 @@ def update_case_arrivals(simulation_parameters, sim_id):
     return simulation_parameters
 
 
-def update_task_duration_dist(simulation_parameters):
+def load_scenario_config():
+    base_path = Path(__file__).parent.parent # Folder where the script is located
+    config_path = base_path /  "raw_data" / "experiment_1_config.yaml"
+    with config_path.open("r", encoding="utf-8") as file:
+        config = yaml.safe_load(file)
+    return config
 
-    #new_dist =DurationDistribution("uniform", 120, 20, 20, 60, 180)
-    new_dist = DurationDistribution("exponential", 7200, None, None, 0, None)
+
+def update_task_duration_dist(simulation_parameters, duration_config):
+    dist_type = duration_config["type"]
+    mean = duration_config.get("mean")
+    std = duration_config.get("std")
+    shape = duration_config.get("shape")
+    minimum = duration_config.get("min")
+    maximum = duration_config.get("max")
+
+    new_dist = DurationDistribution(dist_type, mean, std, shape, minimum, maximum)
     updated_dist = replace_distributions(simulation_parameters['activity_durations_dict'], new_dist)
     simulation_parameters['activity_durations_dict'] = updated_dist
-
     return simulation_parameters
 
 def update_simulation_parameters(simulation_parameters, sim_id):
 
-    simulation_parameters = update_case_arrivals(simulation_parameters, sim_id)
-    simulation_parameters = update_task_duration_dist(simulation_parameters)
+    scenario_config = load_scenario_config()
+    simulation_parameters = update_case_arrivals(simulation_parameters, sim_id, scenario_config["arrivals"])
+    simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config["duration_distribution"])
     return simulation_parameters
 
 def replace_distributions(distribution_dict, new_distribution):
