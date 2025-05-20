@@ -259,6 +259,6 @@ def calculate_agent_handover_probabilities_per_activity(df):
         agent_activity_count = agent_activity_counts[(agent_from, activity_from)]
         transition_probabilities[agent_from][activity_from][agent_to][activity_to] = count / agent_activity_count
 
-    print(f"transition_probabilities: {transition_probabilities}")
+    #print(f"transition_probabilities: {transition_probabilities}")
 
     return transition_probabilities
