@@ -21,7 +21,7 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     Discover the simulation model from the training data.
     """
     simulation_parameters = None
-    simulation_parameters = load_simulation_parameters_pickle(data_dir)
+    #simulation_parameters = load_simulation_parameters_pickle(data_dir)
     if simulation_parameters is not None:
         df_train, agent_to_resource = preprocess(df_train)
     else:
@@ -31,22 +31,22 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
         START_TIME = min(df_test.groupby('case_id')['start_timestamp'].min().to_list())
         START_TIME_VAL = min(df_val.groupby('case_id')['start_timestamp'].min().to_list())
 
-        print("finished 1")
+        print("finished step 1: preprocessing")
         df_train_without_end_activity = store_preprocessed_data(df_train, df_test, df_val, data_dir)
-        print("finished 2")
+        print("finished step 2: store_preprocessed_data")
 
         activities_without_waiting_time = activities_with_zero_waiting_time(df_train)
-        print("finished 2->3")
+        print("finished step 3: activities_with_zero_waiting_time")
 
         # extract roles and calendars
         roles = discover_roles_and_calendars(df_train_without_end_activity)
-        print("finished 3.0")
+        print("finished step 4: discover_roles_and_calendars")
 
         res_calendars, _, _, _, _ = discover_calendar_per_agent(df_train_without_end_activity)
-        print("finished 3.1")
+        print("finished step 5: discover_calendar_per_agent")
 
         activity_durations_dict = compute_activity_duration_distribution_per_agent(df_train, res_calendars, roles)
-        print("finished 3.2")
+        print("finished step 6: compute_activity_duration_distribution_per_agent")
 
         # define mapping of agents to activities based on event log
         agent_activity_mapping = df_train.groupby('agent')['activity_name'].unique().apply(list).to_dict()
@@ -57,18 +57,18 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
         transition_probabilities = compute_activity_transition_dict_global(df_train)
 
         prerequisites, parallel_activities = get_prerequisites_per_activity(df_train)
-        print("finished 4")
+        print("finished step 7: get_prerequisites_per_activity")
 
         # get maximum activity frequency per case
         activity_counts = df_train.groupby(['case_id', 'activity_name']).size().reset_index(name='count')
         max_activity_count_per_case = activity_counts.groupby('activity_name')['count'].max().to_dict()
 
-        print("finished 5")
+        print("finished step 8: max_activity_count_per_case")
 
         # sample arrival times for training and validation data
         case_arrival_times, train_params = get_case_arrival_times(df_train, start_timestamp=START_TIME, num_cases_to_simulate=num_cases_to_simulate, train=True)
         case_arrival_times_val, _ = get_case_arrival_times(df_val, start_timestamp=START_TIME_VAL, num_cases_to_simulate=num_cases_to_simulate_val, train=False, train_params=train_params)
-        print("finished 6")
+        print("finished step 9: get_case_arrival_times")
 
         simulation_parameters = {
             'activity_durations_dict': activity_durations_dict,
@@ -356,7 +356,7 @@ def activities_with_zero_waiting_time(df, threshold=0.99):
 
 def get_prerequisites_per_activity(data):
     preceding_activities_dict = generate_preceding_activities_dict(data)
-    print(f"preceding_activities_dict: {preceding_activities_dict}")
+    #print(f"preceding_activities_dict: {preceding_activities_dict}")
     # x=y
     return preceding_activities_dict, None
 
