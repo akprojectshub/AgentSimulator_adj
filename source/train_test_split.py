@@ -79,9 +79,9 @@ def split_data(PATH_LOG, column_names, PATH_LOG_test=None):
         df_test = df_test.rename(columns=column_names)
 
     # inform about number of cases
-    print(f"The train log conisists of {len(set(df_train_big['case_id']))} cases")
+    #print(f"The train log conisists of {len(set(df_train_big['case_id']))} cases")
     # print(f"The val log conisists of {len(set(df_val['case_id']))} cases")
-    print(f"The test log conisists of {len(set(df_test['case_id']))} cases")
+    #print(f"The test log conisists of {len(set(df_test['case_id']))} cases")
 
     number_test_cases = len(set(df_test['case_id']))
 
