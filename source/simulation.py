@@ -3,7 +3,8 @@ from mesa import Agent, Model
 from mesa.time import BaseScheduler
 from mesa.datacollection import DataCollector
 import numpy as np
-
+from scipy.interpolate import interp1d
+from scipy.integrate import cumtrapz
 from source.agents.contractor import ContractorAgent
 from source.agents.resource import ResourceAgent
 from source.utils import store_simulated_log
@@ -46,13 +47,14 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
 def update_simulation_parameters(simulation_parameters, sim_id):
 
     # Update start timestamp and case arrival times
-    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=2001, rate_low=10, rate_high=40,
+    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(N=10001, rate_low=10, rate_high=40,
                                                                              start_time=pd.Timestamp(
                                                                                  '2025-01-01 00:00:00', tz='UTC'),
                                                                              end_time=pd.Timestamp(
                                                                                  '2025-12-31 23:59:59', tz='UTC'),
-                                                                             num_changes=sim_id + 1,
+                                                                             num_changes=sim_id + 5,
                                                                              start_with_increase=((sim_id + 1) % 2 == 1))
+
     plot_case_arrival_histogram(new_case_arrival_times, 200)
     start_timestamp = new_case_arrival_times[0]
     simulation_parameters['start_timestamp'] = start_timestamp
@@ -92,6 +94,7 @@ def plot_case_arrival_histogram(timestamps, bins=100):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
 
 
 def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_changes,
@@ -135,6 +138,7 @@ def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_
 
     current_is_increase = start_with_increase
 
+    ### DEFINE A LIST LAMBDA FUNCTION PER EACH SEGMENT THAT RETURNS THE DESIRED NUMBER OF ARRIVALS PER TIME PERIOD
     # Define the initial constant rate segment based on whether we start with an increase or decrease
     if start_with_increase:
         pattern = [lambda t: rate_low]  # Start flat at low rate
@@ -156,25 +160,28 @@ def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_
         pattern.append(change)
         pattern.append(fixed)
 
+    ### DEFINE A LIST OF DURATIONS IN SECONDS FOR EACH SEGMENT "durations"
     # Compute the number of segments
     total_segments = len(pattern)
     num_change_segments = len(change_segments)
     num_fixed_segments = total_segments - num_change_segments
 
-    # Assign half of the total duration to change segments and the other half to fixed segments
+    # Assign half of the total duration to change segments and the other half to fixed segments (in seconds)
     change_duration = 0.5 * total_duration_seconds / num_change_segments
     fixed_duration = 0.5 * total_duration_seconds / num_fixed_segments
 
     # Assign durations to each segment based on its type
     durations = [fixed_duration if i % 2 == 0 else change_duration for i in range(total_segments)]
 
+    ### ESTIMATE THE NUMBER OF CASES PER SEGMENT
     # Estimate how many cases should appear in each segment
     segment_cases = []
     total_expected_cases = 0
     for f, d in zip(pattern, durations):
-        t = np.linspace(0, 1, 100)  # Normalized time points within the segment
+        t = np.linspace(0, 1, 1000)  # Normalized time points within the segment
         r = np.array([f(x) for x in t])  # Rates at each time point
         segment_total = np.trapz(r, t) * d  # Approximate total cases via integration
+        #segment_total = np.mean(r)  * d  # Approximate total cases via simple integration
         segment_cases.append(segment_total)
         total_expected_cases += segment_total
 
@@ -182,17 +189,14 @@ def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_
     scale = N / total_expected_cases
     segment_cases = [int(round(c * scale)) for c in segment_cases]
 
+    ### GENERATE TIMESTAMPS WITH A GIVEN ARRIVAL RATE
     # Generate timestamps by simulating inter-arrival times
     timestamps = []
     current_offset = 0.0
     for f, duration, count in zip(pattern, durations, segment_cases):
         if count == 0:
             continue
-        t = np.linspace(0, 1, count + 1)[:-1]  # Normalized positions
-        rates = np.array([f(x) for x in t])  # Compute instantaneous rate
-        inter_arrivals = 1.0 / rates  # Compute time gaps between arrivals
-        segment_times = np.cumsum(inter_arrivals)  # Cumulative arrival times
-        segment_times *= duration / segment_times[-1]  # Normalize to fit the segment duration
+        segment_times = generate_segment_times(f, count, duration)
         segment_times += current_offset  # Shift by current time offset
         current_offset += duration  # Update offset for next segment
         for seconds in segment_times:
@@ -200,20 +204,49 @@ def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_
 
     return timestamps[:N]
 
+def generate_segment_times(rate_fn, count, duration, grid_points=100):
+    """
+    Generate event times for a non-homogeneous Poisson process segment
+    using numerical inversion of the cumulative intensity function.
 
-# timestamps = generate_arrivals_case_timestamps(N=1000, X=5, Y=20, num_cycles=3)
-#
-# # Plot histogram
-# plt.figure(figsize=(10, 5))
-# plt.hist(timestamps, bins=50, edgecolor='black')
-# plt.xlabel('Time')
-# plt.ylabel('Number of Cases')
-# plt.title('Histogram of Case Arrivals Over Time')
-# plt.grid(True)
-# plt.tight_layout()
-# plt.show()
+    This method ensures smooth transitions between different rate regimes
+    (e.g., fixed to linear), and avoids discontinuities that occur when
+    using simple inverse-rate spacing.
 
+    Parameters:
+        rate_fn (callable): A function of a single variable t in [0, 1],
+                            defining the normalized rate over the segment.
+        count (int): Number of events to generate within the segment.
+        duration (float): Length of the segment in seconds.
+        grid_points (int): Number of grid points to evaluate the rate and
+                           compute the cumulative intensity. Higher values
+                           improve accuracy at the cost of performance.
 
+    Returns:
+        np.ndarray: A 1D array of event times (in seconds), scaled to fit
+                    within the specified duration.
+    """
+    # Step 1: Define a uniform grid over the interval [0, 1]
+    t_grid = np.linspace(0, 1, grid_points)
+
+    # Step 2: Evaluate the rate function on the grid and compute the
+    # cumulative intensity using the trapezoidal rule
+    rates = np.array([rate_fn(t) for t in t_grid])
+    cumulative = cumtrapz(rates, t_grid, initial=0)
+
+    # Step 3: Normalize the cumulative intensity so that it spans [0, 1]
+    cumulative /= cumulative[-1]
+
+    # Step 4: Interpolate to construct the inverse of the normalized
+    # cumulative intensity function
+    inverse_cdf = interp1d(cumulative, t_grid, bounds_error=False, fill_value=(0, 1))
+
+    # Step 5: Map evenly spaced uniform values through the inverse function
+    # to obtain event times, then scale them to the segment duration
+    uniform_points = np.linspace(0, 1, count)
+    local_times = inverse_cdf(uniform_points) * duration
+
+    return local_times
 
 
 class Case:
