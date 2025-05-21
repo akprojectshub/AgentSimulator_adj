@@ -14,6 +14,36 @@ from source.utils import store_simulated_log
 import matplotlib.pyplot as plt
 from source.arrival_distribution import DurationDistribution
 from source.utils import save_simulation_parameters_for_scenario
+from tqdm import tqdm
+from threading import RLock
+
+from multiprocessing import Pool, cpu_count
+
+def simulate_process_parallel_processing(df_train, simulation_parameters, data_dir, num_simulations, num_cpus=None):
+    start_timestamp = simulation_parameters['case_arrival_times'][0]
+    simulation_parameters['start_timestamp'] = start_timestamp
+    simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
+
+    args_list = [(scenario_id, df_train, simulation_parameters, data_dir, start_timestamp) for scenario_id in range(num_simulations)
+    ]
+
+    tqdm.set_lock(RLock())
+
+    if num_cpus is None:
+        num_cpus = cpu_count()
+
+    with Pool(processes=min(num_cpus, num_simulations)) as pool:
+        pool.map(simulate_experiment, args_list)
+
+
+def simulate_experiment(args):
+    scenario_id, df_train, simulation_parameters, data_dir, start_timestamp = args
+    local_parameters = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
+    save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
+    business_process_model = BusinessProcessModel(df_train, local_parameters)
+    simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, local_parameters)
+
+
 
 def simulate_process(df_train, simulation_parameters, data_dir, num_simulations):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
@@ -21,31 +51,35 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
     for scenario_id in range(num_simulations):
+        arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp
+        simulate_experiment(arg_list)
 
-        # Update simulation_parameters
-        simulation_parameters = update_simulation_parameters(simulation_parameters, scenario_id)
-        save_simulation_parameters_for_scenario(simulation_parameters, data_dir, scenario_id)
+def simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters):
+    case_id = 0
+    case_ = Case(case_id=case_id, start_timestamp=start_timestamp)
+    cases = [case_]
 
-        # Create the model using the loaded data
-        business_process_model = BusinessProcessModel(df_train, simulation_parameters)
+    total_cases = len(business_process_model.sampled_case_starting_times)
+    progress_bar = tqdm(
+        total=total_cases,
+        desc=f"Simulation in progress for the scenario {scenario_id + 1}: ",
+        #leave=True,
+        #position=scenario_id,  # ensures each bar is on its own line
+        #dynamic_ncols=True  # adjusts bar width dynamically
+        # ascii=True              # optional: use ascii characters for bar
+    )
 
-        # define list of cases
-        case_id = 0
-        case_ = Case(case_id=case_id, start_timestamp=start_timestamp) # first case
-        cases = [case_]
+    while business_process_model.sampled_case_starting_times:
+        business_process_model.step(cases)
+        progress_bar.update(1)
 
-        # Run the model for a specified number of steps
-        while business_process_model.sampled_case_starting_times: # while cases list is not empty
-            business_process_model.step(cases)
-            
-        print(f"number of simulated cases: {len(business_process_model.past_cases)}")
+    progress_bar.close()
+    print(f"number of simulated cases: {len(business_process_model.past_cases)}")
 
-        # Record steps taken by each agent to a single CSV file
-        simulated_log = pd.DataFrame(business_process_model.simulated_events)
-        # add resource column
-        simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
-        # save log to csv
-        store_simulated_log(data_dir, simulated_log, scenario_id)
+    simulated_log = pd.DataFrame(business_process_model.simulated_events)
+    simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
+    store_simulated_log(data_dir, simulated_log, scenario_id)
+    return None
 
 
 def update_case_arrivals(simulation_parameters, sim_id, arrival_config):

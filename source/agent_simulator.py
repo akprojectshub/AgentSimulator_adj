@@ -1,14 +1,14 @@
 import os
 from source.train_test_split import split_data
 from source.discovery import discover_simulation_parameters
-from source.simulation import simulate_process
+from source.simulation import simulate_process, simulate_process_parallel_processing
 class AgentSimulator:
     def __init__(self, params):
         self.params = params
 
     def execute_pipeline(self):
         self.df_train, self.df_test, self.num_cases_to_simulate, self.df_val, self.num_cases_to_simulate_val = self._split_log()
-        
+
         # discover basic simulation parameters
         self.df_train, self.simulation_parameters = discover_simulation_parameters(
             self.df_train, 
@@ -25,7 +25,8 @@ class AgentSimulator:
         #print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
 
         # simulate process
-        simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])
+        #simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])
+        simulate_process_parallel_processing(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'], self.params["num_cpu"])
 
     def _split_log(self):
         """

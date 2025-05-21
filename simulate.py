@@ -61,7 +61,8 @@ if __name__ == "__main__":
         'PATH_LOG_test': PATH_LOG_test,
         'train_and_test': train_and_test,
         'column_names': column_names,
-        'num_simulations': args.num_simulations
+        'num_simulations': args.num_simulations,
+        'num_cpu': 4
     }
 
     simulator = AgentSimulator(params)
