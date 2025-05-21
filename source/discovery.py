@@ -21,7 +21,7 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     Discover the simulation model from the training data.
     """
     simulation_parameters = None
-    #simulation_parameters = load_simulation_parameters_pickle(data_dir)
+    simulation_parameters = load_simulation_parameters_pickle(data_dir)
     if simulation_parameters is not None:
         df_train, agent_to_resource = preprocess(df_train)
     else:

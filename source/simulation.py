@@ -63,7 +63,7 @@ def update_case_arrivals(simulation_parameters, sim_id, arrival_config):
     )
 
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
-    simulation_parameters['case_arrival_times'] = new_case_arrival_times
+    simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
     #plot_case_arrival_histogram(new_case_arrival_times, 200)
 
     return simulation_parameters
@@ -95,6 +95,7 @@ def update_simulation_parameters(simulation_parameters, sim_id):
     scenario_config = load_scenario_config()
     simulation_parameters = update_case_arrivals(simulation_parameters, sim_id, scenario_config["arrivals"])
     simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config["duration_distribution"])
+    #simulation_parameters["activities_without_waiting_time"] = ['zzz_end']
     return simulation_parameters
 
 def replace_distributions(distribution_dict, new_distribution):
