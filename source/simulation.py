@@ -50,6 +50,9 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
+
+    # TODO: count the number of experiment_1 config files
+
     for scenario_id in range(num_simulations):
         arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp
         simulate_experiment(arg_list)
@@ -92,7 +95,7 @@ def update_case_arrivals(simulation_parameters, sim_id, arrival_config):
         rate_high=arrival_config["rate_high"],
         start_time=start_time,
         end_time=end_time,
-        num_changes=sim_id + 1,
+        num_changes=sim_id // 2 + 1,
         start_with_increase=((sim_id + 1) % 2 == 1)
     )
 
@@ -130,7 +133,101 @@ def update_simulation_parameters(simulation_parameters, sim_id):
     simulation_parameters = update_case_arrivals(simulation_parameters, sim_id, scenario_config["arrivals"])
     simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config["duration_distribution"])
     #simulation_parameters["activities_without_waiting_time"] = ['zzz_end']
+    simulation_parameters = define_agent_availability(simulation_parameters, scenario_config["agent_availability"])
+
     return simulation_parameters
+
+
+def define_agent_availability(simulation_parameters, config):
+    SS = config["agents_in_SS"]
+    num_changes = config["num_changes"]
+    resource_funcs = create_individual_availability_functions(SS, num_changes)
+    plot_generated_agent_availabilities(resource_funcs)
+    simulation_parameters['agent_availability'] = resource_funcs
+    return simulation_parameters
+
+def create_individual_availability_functions(SS, num_changes):
+    if len(SS) != 2:
+        raise ValueError("SS must contain exactly two integers.")
+
+    max_resources = max(SS)
+    total_availability_func = create_pattern_function(SS, num_changes)
+
+    resource_functions = {}
+
+    for i in range(1, max_resources + 1):
+        # Each resource is available if its index is less than total available at time t
+        resource_functions[i] = lambda t, idx=i: 1 if idx <= total_availability_func(t) else 0
+
+    return resource_functions
+
+
+def plot_generated_agent_availabilities(resource_funcs):
+    # Plotting
+    t_values = np.linspace(0, 1, 1000)
+
+    # Calculate total availability over time
+    total_availability = [sum(func(t) for func in resource_funcs.values()) for t in t_values]
+
+    # Plotting
+    plt.figure(figsize=(10, 6))
+
+    # Plot individual resource availability
+    for i, func in resource_funcs.items():
+        y_values = [func(t) for t in t_values]
+        plt.plot(t_values, y_values, label=f"Resource {i}", alpha=0.6)
+
+    # Plot total availability
+    plt.plot(t_values, total_availability, label="Total Availability", color='black', linewidth=2)
+
+    plt.xlabel("Time (t)")
+    plt.ylabel("Availability (0 or 1)")
+    plt.title("Resource Availability Over Time")
+    plt.legend(loc="upper right", ncol=2)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+
+def create_pattern_function(SS, num_changes):
+    if len(SS) != 2:
+        raise ValueError("SS must contain exactly two integers.")
+
+    a, b = SS
+    segments = num_changes * 2 + 1
+    interval_length = 1 / segments
+
+    def pattern(x):
+        if not 0 <= x <= 1:
+            raise ValueError("Input x must be between 0 and 1.")
+
+        segment = int(x / interval_length)
+        t = (x % interval_length) / interval_length  # normalized position within segment
+
+        if segment % 2 == 0:
+            # Constant value segment
+            value = a if (segment // 2) % 2 == 0 else b
+        else:
+            # Linear transition segment
+            if a < b:
+                # increasing then decreasing
+                if (segment // 2) % 2 == 0:
+                    value = a + (b - a) * t
+                else:
+                    value = b - (b - a) * t
+            else:
+                # decreasing then increasing
+                if (segment // 2) % 2 == 0:
+                    value = a - (a - b) * t
+                else:
+                    value = b + (a - b) * t
+
+        return round(value)
+
+    return lambda x: pattern(x)
+
+
 
 def replace_distributions(distribution_dict, new_distribution):
     """
@@ -374,7 +471,7 @@ class BusinessProcessModel(Model):
         self.schedule.add(self.contractor_agent)
 
         for agent_id in range(len(self.resources)):
-            # TODO
+            # TODO: enable scenario 2
             agent = ResourceAgent(agent_id, self, self.resources[agent_id], self.timer, self.contractor_agent)
             self.schedule.add(agent)
 
