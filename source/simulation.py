@@ -39,7 +39,7 @@ def simulate_process_parallel_processing(df_train, simulation_parameters, data_d
 def simulate_experiment(args):
     scenario_id, df_train, simulation_parameters, data_dir, start_timestamp = args
     local_parameters = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
-    save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
+    #save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
     business_process_model = BusinessProcessModel(df_train, local_parameters)
     simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, local_parameters)
 
@@ -288,8 +288,8 @@ def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_
     # Validate input parameters
     if num_changes < 1:
         raise ValueError("'num_changes' must be at least 1")
-    if rate_high <= rate_low:
-        raise ValueError("'rate_high' must be greater than 'rate_low'")
+    if rate_high < rate_low:
+        raise ValueError("'rate_high' must be greater or equal to 'rate_low'")
     if end_time <= start_time:
         raise ValueError("'end_time' must be after 'start_time'")
 
