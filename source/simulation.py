@@ -469,10 +469,15 @@ class BusinessProcessModel(Model):
                                                 transition_probabilities=simulation_parameters['transition_probabilities'], 
                                                 agent_activity_mapping=simulation_parameters['agent_activity_mapping'])
         self.schedule.add(self.contractor_agent)
+        self.agent_availability = simulation_parameters["agent_availability"]
 
         for agent_id in range(len(self.resources)):
             # TODO: enable scenario 2
-            agent = ResourceAgent(agent_id, self, self.resources[agent_id], self.timer, self.contractor_agent)
+            agent = ResourceAgent(agent_id, self, self.resources[agent_id], self.timer,
+                                  self.agent_availability[agent_id+1],
+                                  simulation_parameters["start_timestamp"],
+                                  simulation_parameters["case_arrival_times"][-1],
+                                  self.contractor_agent)
             self.schedule.add(agent)
 
         # Data collector to track agent activities over time

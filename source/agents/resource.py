@@ -9,7 +9,7 @@ class ResourceAgent(Agent):
     """
     One agent for each resource in the event log
     """
-    def __init__(self, unique_id, model, resource, timer, contractor_agent=None):
+    def __init__(self, unique_id, model, resource, timer, agent_availability, sim_start, sim_end, contractor_agent=None):
         super().__init__(unique_id, model)
         self.resource = resource
         self.model = model
@@ -23,6 +23,9 @@ class ResourceAgent(Agent):
             self.calendar = next((ids['calendar'] for role, ids in self.model.roles.items() if self.resource in ids['agents']), None)
         self.timer = timer
         self.occupied_times = []
+        self.agent_availability = agent_availability
+        self.sim_start = sim_start
+        self.sim_end = sim_end
 
     def step(self, last_possible_agent=False, parallel_activity=False, current_timestamp=None, perform_multitask=False):
         if not parallel_activity:
@@ -58,6 +61,7 @@ class ResourceAgent(Agent):
         # check if the activity can be performed in multi-tasking style
         if activity in self.model.activities_without_waiting_time:
             perform_multitask = True
+        perform_multitask = False
 
         # check if agent is busy after updating availability status
         if self.is_busy_until != None:
@@ -144,12 +148,39 @@ class ResourceAgent(Agent):
             else:
                 pass # first try if one of the other possible agents is available
 
+    def normalize_current_timestamp(self, current_timestamp):
+        """
+        Returns a value between 0 and 1 based on the position of 'timestamp'
+        between 'self.sim_start' and 'self.sim_end'.
+
+        Parameters:
+            timestamp (pd.Timestamp): The input timestamp to normalize.
+            start_time (pd.Timestamp): The start time of the simulation.
+            end_time (pd.Timestamp): The end time of the simulation.
+
+        Returns:
+            float: A value between 0 and 1.
+        """
+        if current_timestamp > self.sim_end:
+            current_timestamp = self.sim_end
+        total_duration = (self.sim_end - self.sim_start).total_seconds()
+        elapsed_time = (current_timestamp - self.sim_start).total_seconds()
+
+        return elapsed_time / total_duration
+
+
     def is_occupied(self, new_start, activity_duration):
-        new_end = new_start + pd.Timedelta(seconds=activity_duration)
-        for start, end in self.occupied_times:
-            if new_start < end and new_end > start:
-                return True  # There is an overlap
-        return False  # No overlap found
+        norm_new_start = self.normalize_current_timestamp(new_start)
+        agent_available = bool(self.agent_availability(norm_new_start))
+        if not agent_available:
+            #print(f"Agend {self.resource} is blocked at {norm_new_start} due to the simulation scenario")
+            return True #if not available that the resource is occupied
+        else:
+            new_end = new_start + pd.Timedelta(seconds=activity_duration)
+            for start, end in self.occupied_times:
+                if new_start < end and new_end > start and agent_available:
+                    return True  # There is an overlap, resources is busy
+            return False  # No overlap found, task can be performed
     
     def get_current_number_multitasking(self, new_start, activity_duration):
         new_end = new_start + pd.Timedelta(seconds=activity_duration)
