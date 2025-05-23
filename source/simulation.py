@@ -140,21 +140,18 @@ def update_simulation_parameters(simulation_parameters, sim_id):
 
 def define_agent_availability(simulation_parameters, config):
     agents_in_SS = config["agents_in_SS"]
-    num_changes = config["num_changes"]
-    resource_funcs = create_individual_availability_functions(agents_in_SS, num_changes)
+    resource_funcs = create_individual_availability_functions(agents_in_SS)
     plot_generated_agent_availabilities(resource_funcs)
     simulation_parameters['agent_availability'] = resource_funcs
     return simulation_parameters
 
-def create_individual_availability_functions(agents_in_SS, num_changes):
-    if len(agents_in_SS) != 2:
-        raise ValueError("SS must contain exactly two integers.")
+
+def create_individual_availability_functions(agents_in_SS):
 
     max_resources = max(agents_in_SS)
-    total_availability_func = create_pattern_function(agents_in_SS, num_changes)
+    total_availability_func = create_pattern_function(agents_in_SS)
 
     resource_functions = {}
-
     for i in range(1, max_resources + 1):
         # Each resource is available if its index is less than total available at time t
         # Selects the first N resources to be employed, where N is the required number of resources
@@ -189,45 +186,49 @@ def plot_generated_agent_availabilities(resource_funcs):
     plt.tight_layout()
     plt.show()
 
+def create_pattern_function(agents_in_SS):
+    """
+    Build a piecewise pattern function that stays constant at each
+    value in agents_in_SS, with linear transitions between them.
 
+    Parameters:
+        agents_in_SS (list of int): Steady‐state values, at least one.
 
-def create_pattern_function(agents_in_SS, num_changes):
-    if len(agents_in_SS) != 2:
-        raise ValueError("SS must contain exactly two integers.")
+    Returns:
+        function: A function f(t) mapping t in [0,1] to one of the
+                  steady‐state values, with linear ramps in between.
+    """
+    if not agents_in_SS:
+        raise ValueError("agents_in_SS must contain at least one value.")
 
-    a, b = agents_in_SS
-    segments = num_changes * 2 + 1
+    n = len(agents_in_SS)
+    # Number of segments: constant + transition + constant + … = 2*n - 1
+    segments = 2 * n - 1
     interval_length = 1 / segments
 
-    def pattern(x):
-        if not 0 <= x <= 1:
-            raise ValueError("Input x must be between 0 and 1.")
+    def pattern(t):
+        if not 0 <= t <= 1:
+            raise ValueError("Input t must be between 0 and 1.")
 
-        segment = min(int(x / interval_length), segments - 1)
-        t = (x % interval_length) / interval_length  # normalized position within segment
+        # Determine segment index (0 to segments-1)
+        seg = min(int(t / interval_length), segments - 1)
+        # Position within segment, normalized [0,1)
+        tau = (t - seg * interval_length) / interval_length
 
-        if segment % 2 == 0:
-            # Constant value segment
-            value = a if (segment // 2) % 2 == 0 else b
+        if seg % 2 == 0:
+            # Even segments are constant
+            idx = seg // 2
+            value = agents_in_SS[idx]
         else:
-            # Linear transition segment
-            if a < b:
-                # increasing then decreasing
-                if (segment // 2) % 2 == 0:
-                    value = a + (b - a) * t
-                else:
-                    value = b - (b - a) * t
-            else:
-                # decreasing then increasing
-                if (segment // 2) % 2 == 0:
-                    value = a - (a - b) * t
-                else:
-                    value = b + (a - b) * t
+            # Odd segments are transitions between agents_in_SS[k] → agents_in_SS[k+1]
+            k = seg // 2
+            a = agents_in_SS[k]
+            b = agents_in_SS[k + 1]
+            value = a + (b - a) * tau
 
         return round(value)
 
-    return lambda x: pattern(x)
-
+    return pattern
 
 
 def replace_distributions(distribution_dict, new_distribution):
