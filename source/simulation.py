@@ -139,24 +139,25 @@ def update_simulation_parameters(simulation_parameters, sim_id):
 
 
 def define_agent_availability(simulation_parameters, config):
-    SS = config["agents_in_SS"]
+    agents_in_SS = config["agents_in_SS"]
     num_changes = config["num_changes"]
-    resource_funcs = create_individual_availability_functions(SS, num_changes)
+    resource_funcs = create_individual_availability_functions(agents_in_SS, num_changes)
     plot_generated_agent_availabilities(resource_funcs)
     simulation_parameters['agent_availability'] = resource_funcs
     return simulation_parameters
 
-def create_individual_availability_functions(SS, num_changes):
-    if len(SS) != 2:
+def create_individual_availability_functions(agents_in_SS, num_changes):
+    if len(agents_in_SS) != 2:
         raise ValueError("SS must contain exactly two integers.")
 
-    max_resources = max(SS)
-    total_availability_func = create_pattern_function(SS, num_changes)
+    max_resources = max(agents_in_SS)
+    total_availability_func = create_pattern_function(agents_in_SS, num_changes)
 
     resource_functions = {}
 
     for i in range(1, max_resources + 1):
         # Each resource is available if its index is less than total available at time t
+        # Selects the first N resources to be employed, where N is the required number of resources
         resource_functions[i] = lambda t, idx=i: 1 if idx <= total_availability_func(t) else 0
 
     return resource_functions
