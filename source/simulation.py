@@ -203,9 +203,7 @@ def create_pattern_function(agents_in_SS, num_changes):
         if not 0 <= x <= 1:
             raise ValueError("Input x must be between 0 and 1.")
 
-        #segment = int(x / interval_length)
         segment = min(int(x / interval_length), segments - 1)
-
         t = (x % interval_length) / interval_length  # normalized position within segment
 
         if segment % 2 == 0:
