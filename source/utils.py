@@ -28,8 +28,8 @@ def store_preprocessed_data(df_train, df_test, df_val, data_dir):
     return df_train_without_end_activity
 
 
-def store_simulated_log(data_dir, simulated_log, index):
-    path_to_file = os.path.join(data_dir,f"simulated_log_{index}.csv")
+def store_simulated_log(data_dir, simulated_log, scenario_id, simulation_id):
+    path_to_file = os.path.join(data_dir,f"simulated_log_{scenario_id}_{simulation_id}.csv")
     simulated_log.to_csv(path_to_file, index=False)
 
     renamed_log = simulated_log.rename(columns={
@@ -40,7 +40,7 @@ def store_simulated_log(data_dir, simulated_log, index):
     })
     renamed_log = dataframe_utils.convert_timestamp_columns_in_df(renamed_log)
     renamed_log_xes = log_converter.apply(renamed_log, variant=log_converter.Variants.TO_EVENT_LOG)
-    path_to_file = os.path.join(data_dir,f"simulated_log_{index}.xes")
+    path_to_file = os.path.join(data_dir,f"simulated_log_{scenario_id}_{simulation_id}.xes")
     xes_exporter.apply(renamed_log_xes, path_to_file)
     print(f"Simulated logs are stored in {path_to_file}")
 
@@ -84,7 +84,7 @@ def save_simulation_parameters_original(simulation_parameters, data_dir, option=
     os.makedirs(data_dir, exist_ok=True)
 
     if option=="pkl":
-        pkl_path = os.path.join(data_dir, "simulation_parameters_original_bimp.pkl")
+        pkl_path = os.path.join(data_dir, "", "simulation_parameters_original_bimp.pkl")
         with open(pkl_path, "wb") as pkl_file:
             pickle.dump(simulation_parameters, pkl_file)
     else:

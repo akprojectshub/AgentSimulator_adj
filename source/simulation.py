@@ -16,32 +16,34 @@ from source.arrival_distribution import DurationDistribution
 from source.utils import save_simulation_parameters_for_scenario
 from tqdm import tqdm
 from threading import RLock
-
+import re
 from multiprocessing import Pool, cpu_count
+import os
 
 def simulate_process_parallel_processing(df_train, simulation_parameters, data_dir, num_simulations, num_cpus=None):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
-    args_list = [(scenario_id, df_train, simulation_parameters, data_dir, start_timestamp) for scenario_id in range(num_simulations)
-    ]
+    num_of_scenarios = count_experiment_configs(data_dir)
+
+    args_list = [(scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations) for scenario_id in range(1, num_of_scenarios+1)]
 
     tqdm.set_lock(RLock())
 
     if num_cpus is None:
         num_cpus = cpu_count()
 
-    with Pool(processes=min(num_cpus, num_simulations)) as pool:
+    with Pool(processes=min(num_cpus, num_of_scenarios)) as pool:
         pool.map(simulate_experiment, args_list)
 
 
 def simulate_experiment(args):
-    scenario_id, df_train, simulation_parameters, data_dir, start_timestamp = args
+    scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations = args
     local_parameters = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
     #save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
     business_process_model = BusinessProcessModel(df_train, local_parameters)
-    simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, local_parameters)
+    simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, local_parameters, num_simulations)
 
 
 
@@ -50,14 +52,12 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
-
-    # TODO: count the number of experiment_1 config files
-
-    for scenario_id in range(num_simulations):
-        arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp
+    num_of_scenarios = count_experiment_configs(data_dir)
+    for scenario_id in range(1, num_of_scenarios+1):
+        arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations
         simulate_experiment(arg_list)
 
-def simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters):
+def simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters, num_simulations):
     case_id = 0
     case_ = Case(case_id=case_id, start_timestamp=start_timestamp)
     cases = [case_]
@@ -65,29 +65,58 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
     total_cases = len(business_process_model.sampled_case_starting_times)
     progress_bar = tqdm(
         total=total_cases,
-        desc=f"Simulation in progress for the scenario {scenario_id + 1}: ",
+        desc=f"Scenario {scenario_id + 1}: ",
         #leave=True,
         #position=scenario_id,  # ensures each bar is on its own line
         #dynamic_ncols=True  # adjusts bar width dynamically
         # ascii=True              # optional: use ascii characters for bar
     )
+    for simulation_id in range(1, num_simulations+1):
+        print(f"Scenario {scenario_id + 1}, simulation run: {simulation_id}")
+        while business_process_model.sampled_case_starting_times:
+            business_process_model.step(cases)
+            progress_bar.update(1)
 
-    while business_process_model.sampled_case_starting_times:
-        business_process_model.step(cases)
-        progress_bar.update(1)
+        progress_bar.close()
+        print(f"number of simulated cases: {len(business_process_model.past_cases)}")
 
-    progress_bar.close()
-    print(f"number of simulated cases: {len(business_process_model.past_cases)}")
-
-    simulated_log = pd.DataFrame(business_process_model.simulated_events)
-    simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
-    store_simulated_log(data_dir, simulated_log, scenario_id)
+        simulated_log = pd.DataFrame(business_process_model.simulated_events)
+        simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
+        store_simulated_log(data_dir, simulated_log, scenario_id, simulation_id)
     return None
 
 
-def update_case_arrivals(simulation_parameters, sim_id, arrival_config):
+
+def count_experiment_configs(data_dir):
+    """
+    Count files named experiment_<number>_config.yaml in the given folder.
+
+    Parameters:
+        folder_path (str): Path to the directory to search.
+
+    Returns:
+        int: Number of files matching the pattern.
+    """
+
+    folder_path = change_data_dir_to_folder_with_config(data_dir)
+
+    pattern = re.compile(r'^experiment_1_config_\d+\.yaml$')
+    try:
+        entries = os.listdir(folder_path)
+    except FileNotFoundError:
+        raise ValueError(f"Folder not found: {folder_path}")
+
+    count = sum(1 for name in entries if pattern.match(name))
+    print(f"Found {count} configurations files for Experiment 1")
+    return count
+
+
+def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
     start_time = pd.Timestamp(arrival_config["start_time"], tz='UTC')
     end_time = pd.Timestamp(arrival_config["end_time"], tz='UTC')
+
+    num_changes = arrival_config['num_changes']
+    start_with_increase = arrival_config['start_with_increase']
 
     new_case_arrival_times = generate_arrivals_case_timestamps_between_times(
         N=arrival_config["N"],
@@ -95,20 +124,20 @@ def update_case_arrivals(simulation_parameters, sim_id, arrival_config):
         rate_high=arrival_config["rate_high"],
         start_time=start_time,
         end_time=end_time,
-        num_changes=sim_id // 2 + 1,
-        start_with_increase=((sim_id + 1) % 2 == 1)
+        num_changes=num_changes,
+        start_with_increase=start_with_increase
     )
 
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
     simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
-    #plot_case_arrival_histogram(new_case_arrival_times, 200)
+    plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
 
     return simulation_parameters
 
 
-def load_scenario_config():
+def load_scenario_config(sim_id):
     base_path = Path(__file__).parent.parent # Folder where the script is located
-    config_path = base_path /  "raw_data" / "experiment_1_config.yaml"
+    config_path = base_path /  "raw_data" / "experiment_1_settings" / f"experiment_1_config_{sim_id}.yaml"
     with config_path.open("r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
     return config
@@ -127,21 +156,95 @@ def update_task_duration_dist(simulation_parameters, duration_config):
     simulation_parameters['activity_durations_dict'] = updated_dist
     return simulation_parameters
 
-def update_simulation_parameters(simulation_parameters, sim_id):
+def update_simulation_parameters(simulation_parameters, scenario_id):
 
-    scenario_config = load_scenario_config()
-    simulation_parameters = update_case_arrivals(simulation_parameters, sim_id, scenario_config["arrivals"])
+    scenario_config = load_scenario_config(scenario_id)
+    simulation_parameters = update_case_arrivals(simulation_parameters, scenario_id, scenario_config["arrivals"])
     simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config["duration_distribution"])
     #simulation_parameters["activities_without_waiting_time"] = ['zzz_end']
-    simulation_parameters = define_agent_availability(simulation_parameters, scenario_config["agent_availability"])
+    simulation_parameters = define_agent_availability(simulation_parameters, scenario_config["agent_availability"], scenario_id)
+    # Todo: make sure that all resources have the setting of the resource 1
+    simulation_parameters = update_resource_related_config(simulation_parameters)
+    return simulation_parameters
+
+
+def update_role(simulation_parameters, n_agents):
+
+    agents =  list(range(n_agents))
+    calendar = [{'from': 'MONDAY',
+      'to': 'MONDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'},
+     {'from': 'TUESDAY',
+      'to': 'TUESDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'},
+     {'from': 'WEDNESDAY',
+      'to': 'WEDNESDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'},
+     {'from': 'THURSDAY',
+      'to': 'THURSDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'},
+     {'from': 'FRIDAY',
+      'to': 'FRIDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'},
+     {'from': 'SATURDAY',
+      'to': 'SATURDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'},
+     {'from': 'SUNDAY',
+      'to': 'SUNDAY',
+      'beginTime': '00:00:00',
+      'endTime': '23:59:59.999000'}]
+
+    roles = {'Role 1': {'agents': agents, 'calendar': calendar}}
+    simulation_parameters['roles'] = roles
+    return simulation_parameters
+
+
+def update_resource_related_config(simulation_parameters):
+
+    # Determine the number of agents originally detected from the bimp simulated event log
+    number_of_original_agents = len(simulation_parameters['res_calendars'])
+
+    # Determine the number of relevant agents from the 'agent_availability' dictionary
+    number_of_relevant_agents = len(simulation_parameters["agent_availability"].keys())
+
+    # Update the 'Role 1' section of simulation_parameters based on the number of agents
+    simulation_parameters = update_role(simulation_parameters, number_of_relevant_agents)
+
+    # Define the list of keys that require updating
+    key_to_be_updated = [
+        "activity_durations_dict",
+        "res_calendars",
+        "agent_activity_mapping",
+        "agent_transition_probabilities_autonomous",
+        "agent_to_resource"
+    ]
+
+    # For each relevant key, update the values to match the current number of agents
+    for key in key_to_be_updated:
+        if key in simulation_parameters:
+            updated_values = {}
+            for agent_id in range(number_of_relevant_agents):
+                # Use modulo to safely get a base value even if original keys are fewer
+                base_value = simulation_parameters[key].get(agent_id % number_of_original_agents)
+                updated_values[agent_id] = base_value
+            # Replace the original dictionary with the updated one
+            simulation_parameters[key] = updated_values
+
+    simulation_parameters['agents_sorted'] =  range(number_of_relevant_agents)
 
     return simulation_parameters
 
 
-def define_agent_availability(simulation_parameters, config):
+def define_agent_availability(simulation_parameters, config, scenario_id):
     agents_in_SS = config["agents_in_SS"]
     resource_funcs = create_individual_availability_functions(agents_in_SS)
-    plot_generated_agent_availabilities(resource_funcs)
+    plot_generated_agent_availabilities(resource_funcs, scenario_id)
     simulation_parameters['agent_availability'] = resource_funcs
     return simulation_parameters
 
@@ -160,7 +263,7 @@ def create_individual_availability_functions(agents_in_SS):
     return resource_functions
 
 
-def plot_generated_agent_availabilities(resource_funcs):
+def plot_generated_agent_availabilities(resource_funcs, scenario_id):
     # Plotting
     t_values = np.linspace(0, 1, 1000)
 
@@ -180,7 +283,7 @@ def plot_generated_agent_availabilities(resource_funcs):
 
     plt.xlabel("Time (t)")
     plt.ylabel("Availability (0 or 1)")
-    plt.title("Resource Availability Over Time")
+    plt.title(f"Resource Availability Over Time (scenario {scenario_id})")
     plt.legend(loc="upper right", ncol=2)
     plt.grid(True)
     plt.tight_layout()
@@ -249,12 +352,12 @@ def replace_distributions(distribution_dict, new_distribution):
     return distribution_dict
 
 
-def plot_case_arrival_histogram(timestamps, bins=100):
+def plot_case_arrival_histogram(timestamps, scenario_id, bins=100):
     plt.figure(figsize=(10, 5))
     plt.hist(timestamps, bins=bins, edgecolor='black')
     plt.xlabel('Time')
     plt.ylabel('Number of Cases')
-    plt.title('Histogram of Case Arrivals Over Time')
+    plt.title(f'Histogram of Case Arrivals Over Time (scenario {scenario_id})')
     plt.grid(True)
     plt.tight_layout()
     plt.show()
@@ -447,9 +550,9 @@ class Case:
 class BusinessProcessModel(Model):
     def __init__(self, data, simulation_parameters):
         self.data = data
-        self.resources = sorted(set(self.data['agent']))
+        #self.resources = sorted(set(self.data['agent']))
+        self.resources = simulation_parameters['agents_sorted']
         activities = sorted(set(self.data['activity_name']))
-
         self.roles = simulation_parameters['roles']
         self.agents_busy_until = {key: simulation_parameters['start_timestamp'] for key in self.resources}
         self.calendars = simulation_parameters['res_calendars']
@@ -555,3 +658,8 @@ class MyScheduler(BaseScheduler):
         for agent_key in agent_keys_:
             if agent_key in self._agents:
                 getattr(self._agents[agent_key], method)(self, agent_keys, cases)
+
+
+def change_data_dir_to_folder_with_config(data_dir):
+    base_path = Path(data_dir).parents[3]
+    return base_path / 'AgentSimulator' / 'raw_data' / 'experiment_1_settings'

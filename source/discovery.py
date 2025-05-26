@@ -14,7 +14,8 @@ from source.extraneous_delays.config import (
 )
 from source.extraneous_delays.delay_discoverer import compute_complex_extraneous_activity_delays, compute_naive_extraneous_activity_delays
 from source.extraneous_delays.event_log import EventLogIDs
-from source.simulation import BusinessProcessModel, Case
+from source.simulation import BusinessProcessModel, Case, change_data_dir_to_folder_with_config
+
 
 def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_cases_to_simulate, num_cases_to_simulate_val, determine_automatically=False, central_orchestration=False, discover_extr_delays=False):
     """
@@ -97,14 +98,14 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     return df_train, simulation_parameters
 
 
-
 def load_simulation_parameters_pickle(data_dir):
     """Load simulation parameters from a pickle file in the given directory.
 
     Returns the dictionary if successful, otherwise returns None.
     """
-    pkl_path = os.path.join(data_dir, "simulation_parameters_original_bimp.pkl")
 
+    pkl_path = change_data_dir_to_folder_with_config(data_dir)
+    pkl_path = pkl_path / 'simulation_parameters_original_bimp.pkl'
     if os.path.isfile(pkl_path):
         try:
             with open(pkl_path, "rb") as pkl_file:
