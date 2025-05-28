@@ -82,9 +82,47 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
 
         simulated_log = pd.DataFrame(business_process_model.simulated_events)
         simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
+
+        simulated_log = add_ss_id_arrivals(simulated_log, simulation_parameters)
+        simulated_log = add_ss_id_resources(simulated_log, simulation_parameters)
+
         store_simulated_log(data_dir, simulated_log, scenario_id, simulation_id)
     return None
 
+
+def add_ss_id_resources(simulated_log, simulation_parameters):
+    gold_standard = simulation_parameters['gold_standard']['scenario_resources']
+    simulated_log['ss_id_resources'] = simulated_log["start_timestamp"].apply(
+        lambda ts: get_stead_state_id(ts, gold_standard))
+    return simulated_log
+
+
+def add_ss_id_arrivals(simulated_log, simulation_parameters):
+    gold_standard = simulation_parameters['gold_standard']['scenario_arrivals']
+
+    simulated_log['ss_id_arrivals'] = simulated_log["start_timestamp"].apply(
+        lambda ts: get_stead_state_id(ts, gold_standard))
+    return simulated_log
+
+
+
+def get_stead_state_id(timestamp, gold_standard):
+    """
+    Given a timestamp, return the segment_id and ss_id from segment metadata.
+
+    Parameters:
+        timestamp (pd.Timestamp): The timestamp to classify.
+        gold_standard (List[dict]): List of segment information dictionaries,
+                                       each with keys 'start', 'end', 'segment_id', and 'ss_id'.
+
+    Returns:
+        dict: A dictionary with keys 'segment_id' and 'ss_id'.
+              Returns None if timestamp does not fall in any segment.
+    """
+    for segment in gold_standard:
+        if segment["start"] <= timestamp < segment["end"]:
+            return int(segment["ss_id"])
+    return -1
 
 
 def count_experiment_configs(data_dir):
@@ -113,15 +151,17 @@ def count_experiment_configs(data_dir):
 
 def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
 
-    new_case_arrival_times = generate_arrivals_case_timestamps_between_times_new(
+    new_case_arrival_times, segment_metadata = generate_arrivals_case_timestamps_between_times_new(
         N=arrival_config["N"],
         rate_schedule=arrival_config["rate_schedule"],
         start_time=pd.Timestamp(arrival_config["start_time"], tz='UTC'),
         end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'))
 
+    plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
+
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
     simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
-    plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
+    simulation_parameters['gold_standard'] = {'scenario_arrivals': segment_metadata}
 
     return simulation_parameters
 
@@ -154,7 +194,6 @@ def update_simulation_parameters(simulation_parameters, scenario_id):
     simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config["duration_distribution"])
     #simulation_parameters["activities_without_waiting_time"] = ['zzz_end']
     simulation_parameters = define_agent_availability(simulation_parameters, scenario_config["agent_availability"], scenario_id)
-    # Todo: make sure that all resources have the setting of the resource 1
     simulation_parameters = update_resource_related_config(simulation_parameters)
     return simulation_parameters
 
@@ -235,8 +274,14 @@ def update_resource_related_config(simulation_parameters):
 def define_agent_availability(simulation_parameters, config, scenario_id):
     agents_in_SS = config["agents_in_SS"]
     resource_funcs = create_individual_availability_functions(agents_in_SS)
-    plot_generated_agent_availabilities(resource_funcs, scenario_id)
     simulation_parameters['agent_availability'] = resource_funcs
+    plot_generated_agent_availabilities(resource_funcs, scenario_id)
+
+    gold_standard_resources = create_metadata_resources(agents_in_SS,
+                                     simulation_parameters['start_timestamp'],
+                                     simulation_parameters['case_arrival_times'][-1])
+    simulation_parameters['gold_standard']['scenario_resources'] = gold_standard_resources
+
     return simulation_parameters
 
 
@@ -279,6 +324,89 @@ def plot_generated_agent_availabilities(resource_funcs, scenario_id):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+
+def create_metadata_resources(agents_in_SS, start_point, end_point):
+    """
+    Create metadata from agent steady-state information to be used as a gold standard in evaluation.
+
+    Parameters:
+        agents_in_SS (list[int]): Sequence of resource levels at fixed segments.
+        start_point (pd.Timestamp): Start time of the interval.
+        end_point (pd.Timestamp): End time of the interval.
+
+    Returns:
+        list[dict]: Metadata for each segment, including fix and change segments.
+    """
+    metadata = []
+    segment_id = 1  # Unique segment identifier starting at 1
+    length = len(agents_in_SS)  # Total number of fixed resource values
+
+    # Calculate total duration in seconds and duration per segment step
+    total_duration = (end_point - start_point).total_seconds()
+    seconds_per_step = total_duration / length
+
+    ss_id_map = {}  # Map to assign unique ss_id for each resource value
+    current_ss_id = 1  # Counter for ss_id assignments
+
+    for i in range(length):
+        resource_value = agents_in_SS[i]
+
+        # Assign ss_id for the fixed segment if not already assigned
+        if resource_value not in ss_id_map:
+            ss_id_map[resource_value] = current_ss_id
+            current_ss_id += 1
+        fix_ss_id = ss_id_map[resource_value]
+
+        # Define start time for the fix segment
+        start_fix = start_point + pd.to_timedelta(i * seconds_per_step, unit='s')
+
+        # Define end time for fix segment:
+        # For all but the last fixed segment, the fix segment ends halfway to the next point
+        if i < length - 1:
+            end_fix = start_point + pd.to_timedelta((i + 0.5) * seconds_per_step, unit='s')
+        else:
+            # For the last fixed segment, end at the final end_point
+            end_fix = start_point + pd.to_timedelta((i + 1) * seconds_per_step, unit='s')
+
+        # Append fix segment metadata
+        metadata.append({
+            "start": start_fix,
+            "end": end_fix,
+            "type": "fix",
+            "segment_id": segment_id,
+            "num_resources": resource_value,
+            "ss_id": fix_ss_id
+        })
+        segment_id += 1  # Increment segment id for next segment
+
+        # Add a change segment only if this is not the last fixed segment
+        if i < length - 1:
+            next_value = agents_in_SS[i + 1]
+
+            # Determine if the change is an increase or decrease
+            change_type = "increase" if next_value > resource_value else "decrease"
+
+            # Change segment starts where the fix segment ends
+            start_change = end_fix
+
+            # Change segment ends at the start of the next fix segment
+            end_change = start_point + pd.to_timedelta((i + 1) * seconds_per_step, unit='s')
+
+            # Append change segment metadata with no fixed resource count and ss_id = 0
+            metadata.append({
+                "start": start_change,
+                "end": end_change,
+                "type": change_type,
+                "segment_id": segment_id,
+                "num_resources": float('nan'),
+                "ss_id": 0
+            })
+            segment_id += 1  # Increment segment id for next segment
+
+    return metadata
+
+
 
 def create_pattern_function(agents_in_SS):
     """
@@ -402,7 +530,17 @@ def generate_arrivals_case_timestamps_between_times_new(N, rate_schedule,
             start_time + pd.to_timedelta(i * total_seconds / (N - 1), unit='s')
             for i in range(N)
         ] if N > 1 else [start_time]
-        return timestamps[:N]
+
+        # Create segment metadata for the single fixed segment
+        segment_metadata = [{
+            "start": start_time,
+            "end": end_time,
+            "type": "fixed",
+            "segment_id": 1,
+            "ss_id": 1
+        }]
+
+        return timestamps[:N], segment_metadata
 
     total_duration_seconds = (end_time - start_time).total_seconds()
     num_fixed_segments = len(rate_schedule)
@@ -464,7 +602,48 @@ def generate_arrivals_case_timestamps_between_times_new(N, rate_schedule,
         for seconds in segment_times:
             timestamps.append(start_time + pd.to_timedelta(seconds, unit='s'))
 
-    return timestamps[:N]
+
+    # Create gold standard (segment metadata)
+    segment_metadata = create_segment_meda_data(rate_schedule, durations, pattern, start_time)
+
+    return timestamps[:N], segment_metadata
+
+
+def create_segment_meda_data(rate_schedule, durations, pattern, start_time):
+
+    # Collect segment metadata for gold standard
+    # ss_id: fixed segments with the same rate have the same ID; change segments get ss_id = 0
+    # segment_id: unique ID per segment (fixed or change), based on pattern order
+    segment_metadata = []
+    current_offset = 0.0
+
+    # Map each unique fixed rate to a steady-state ID (ss_id)
+    rate_to_ss_id = {}
+    current_ss_id = 1
+    for rate in rate_schedule:
+        if rate not in rate_to_ss_id:
+            rate_to_ss_id[rate] = current_ss_id
+            current_ss_id += 1
+
+    for i, (duration, f) in enumerate(zip(durations, pattern)):
+        start = start_time + pd.to_timedelta(current_offset, unit='s')
+        end = start_time + pd.to_timedelta(current_offset + duration, unit='s')
+        segment_type = "fixed" if i % 2 == 0 else "change"
+        if segment_type == "fixed":
+            rate = rate_schedule[i // 2]
+            ss_id = rate_to_ss_id[rate]
+        else:
+            ss_id = 0  # For changing segments
+
+        segment_metadata.append({
+            "start": start,
+            "end": end,
+            "type": segment_type,
+            "segment_id": i,  # Unique ID for each segment
+            "ss_id": ss_id    # Same ID for segments with same rate, 0 for change
+        })
+        current_offset += duration
+    return segment_metadata
 
 
 class Case:
