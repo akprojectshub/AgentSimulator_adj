@@ -112,24 +112,19 @@ def count_experiment_configs(data_dir):
 
 
 def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
-    start_time = pd.Timestamp(arrival_config["start_time"], tz='UTC')
-    end_time = pd.Timestamp(arrival_config["end_time"], tz='UTC')
-
-    num_changes = arrival_config['num_changes']
-    start_with_increase = arrival_config['start_with_increase']
 
     new_case_arrival_times = generate_arrivals_case_timestamps_between_times(
         N=arrival_config["N"],
         rate_low=arrival_config["rate_low"],
         rate_high=arrival_config["rate_high"],
-        start_time=start_time,
-        end_time=end_time,
-        num_changes=num_changes,
-        start_with_increase=start_with_increase
+        start_time=pd.Timestamp(arrival_config["start_time"], tz='UTC'),
+        end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'),
+        num_changes=arrival_config['num_changes'],
+        start_with_increase=arrival_config['start_with_increase']
     )
 
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
-    simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
+    simulation_parameters['case_arrival_times'] = new_case_arrival_times # [1:]
     plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
 
     return simulation_parameters
