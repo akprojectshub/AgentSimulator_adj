@@ -386,12 +386,24 @@ def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_
     """
 
     # Validate input parameters
-    if num_changes < 1:
-        raise ValueError("'num_changes' must be at least 1")
+    if num_changes < 0:
+        raise ValueError("'num_changes' must be at least 0")
     if rate_high < rate_low:
         raise ValueError("'rate_high' must be greater or equal to 'rate_low'")
     if end_time <= start_time:
         raise ValueError("'end_time' must be after 'start_time'")
+
+    # Handle case with no rate changes: return evenly spaced timestamps
+    if num_changes == 0:
+        if N == 0:
+            return []
+        total_seconds = (end_time - start_time).total_seconds()
+        timestamps =  [
+            start_time + pd.to_timedelta(i * total_seconds / (N - 1), unit='s')
+            for i in range(N)
+        ] if N > 1 else [start_time]
+        return timestamps[:N]
+
 
     total_duration_seconds = (end_time - start_time).total_seconds()
 
