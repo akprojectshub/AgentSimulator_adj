@@ -113,18 +113,14 @@ def count_experiment_configs(data_dir):
 
 def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
 
-    new_case_arrival_times = generate_arrivals_case_timestamps_between_times(
+    new_case_arrival_times = generate_arrivals_case_timestamps_between_times_new(
         N=arrival_config["N"],
-        rate_low=arrival_config["rate_low"],
-        rate_high=arrival_config["rate_high"],
+        rate_schedule=arrival_config["rate_schedule"],
         start_time=pd.Timestamp(arrival_config["start_time"], tz='UTC'),
-        end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'),
-        num_changes=arrival_config['num_changes'],
-        start_with_increase=arrival_config['start_with_increase']
-    )
+        end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'))
 
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
-    simulation_parameters['case_arrival_times'] = new_case_arrival_times # [1:]
+    simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
     plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
 
     return simulation_parameters
@@ -357,170 +353,118 @@ def plot_case_arrival_histogram(timestamps, scenario_id, bins=100):
     plt.tight_layout()
     plt.show()
 
+def generate_segment_times_new(rate_function, count, duration):
+    """
+     Generate `count` arrival times over `duration` seconds given a rate_function.
+     The function defines rate(t), where t ∈ [0, 1].
+     """
+    if count == 0:
+        return np.array([])
 
+    t_values = np.linspace(0, 1, 1000)
+    rate_values = np.array([rate_function(t) for t in t_values], dtype=np.float64)
+    cumulative = np.cumsum(rate_values)
+    cumulative = cumulative / cumulative[-1]  # Avoid in-place division to preserve dtype
+    arrival_points = np.linspace(0, 1, count)
+    arrival_times = np.interp(arrival_points, cumulative, t_values)
+    return arrival_times * duration
 
-def generate_arrivals_case_timestamps_between_times(N, rate_low, rate_high, num_changes,
-                                                    start_time, end_time,
-                                                    start_with_increase=True):
+def generate_arrivals_case_timestamps_between_times_new(N, rate_schedule,
+                                                    start_time, end_time):
     """
     Generate a list of N case arrival timestamps between two given times.
 
-    The arrival rate follows a pattern with a specified number of changes between
-    increasing and decreasing linear segments. Between each change, the rate is held
-    constant. The total time is split such that the duration spent changing rates equals
-    the duration spent at constant rates.
+    The arrival rate follows a pattern defined by the rate_schedule. Each fixed segment
+    uses a constant rate from the schedule, and each transition segment linearly changes
+    from one rate to the next. The total time is split evenly between constant and changing
+    segments.
 
     Parameters:
         N (int): Total number of arrival timestamps to generate.
-        rate_low (float): The lower bound of the arrival rate (cases per second).
-        rate_high (float): The upper bound of the arrival rate (cases per second).
-        num_changes (int): The number of rate changes (alternating increase/decrease).
+        rate_schedule (List[float]): List of target rates (cases per second) for fixed segments.
         start_time (pd.Timestamp): The starting timestamp for the first case.
         end_time (pd.Timestamp): The ending timestamp for the last case.
-        start_with_increase (bool): If True, the first change will increase from
-            rate_low to rate_high. If False, it will decrease from rate_high to rate_low.
 
     Returns:
-        List[pd.Timestamp]: A list of N pandas Timestamps representing the arrival times
-        of the cases, spread between start_time and end_time according to the described pattern.
+        List[pd.Timestamp]: A list of N pandas Timestamps representing the arrival times.
     """
 
-    # Validate input parameters
-    if num_changes < 0:
-        raise ValueError("'num_changes' must be at least 0")
-    if rate_high < rate_low:
-        raise ValueError("'rate_high' must be greater or equal to 'rate_low'")
+    if len(rate_schedule) < 1:
+        raise ValueError("'rate_schedule' must have at least one value")
     if end_time <= start_time:
         raise ValueError("'end_time' must be after 'start_time'")
 
-    # Handle case with no rate changes: return evenly spaced timestamps
-    if num_changes == 0:
+    if len(rate_schedule) == 1:
         if N == 0:
             return []
         total_seconds = (end_time - start_time).total_seconds()
-        timestamps =  [
+        timestamps = [
             start_time + pd.to_timedelta(i * total_seconds / (N - 1), unit='s')
             for i in range(N)
         ] if N > 1 else [start_time]
         return timestamps[:N]
 
-
     total_duration_seconds = (end_time - start_time).total_seconds()
+    num_fixed_segments = len(rate_schedule)
+    num_change_segments = len(rate_schedule) - 1
 
-    change_segments = []
-    fixed_segments = []
+    # Build fixed rate functions
+    fixed_segments = [
+        (lambda rate: lambda t: rate)(rate) for rate in rate_schedule
+    ]
 
-    current_is_increase = start_with_increase
+    # Build change rate functions (linear interpolation between rates)
+    change_segments = [
+        (lambda r1, r2: lambda t: r1 + (r2 - r1) * t)(rate_schedule[i], rate_schedule[i + 1])
+        for i in range(num_change_segments)
+    ]
 
-    ### DEFINE A LIST LAMBDA FUNCTION PER EACH SEGMENT THAT RETURNS THE DESIRED NUMBER OF ARRIVALS PER TIME PERIOD
-    # Define the initial constant rate segment based on whether we start with an increase or decrease
-    if start_with_increase:
-        pattern = [lambda t: rate_low]  # Start flat at low rate
-    else:
-        pattern = [lambda t: rate_high]  # Start flat at high rate
+    # Interleave fixed and change segments
+    pattern = []
+    for i in range(num_change_segments):
+        pattern.append(fixed_segments[i])
+        pattern.append(change_segments[i])
+    pattern.append(fixed_segments[-1])  # Final fixed segment
 
-    # Create alternating increase/decrease and flat segments
-    for _ in range(num_changes):
-        if current_is_increase:
-            change_segments.append(lambda t, low=rate_low, high=rate_high: low + (high - low) * t)
-            fixed_segments.append(lambda t: rate_high)
-        else:
-            change_segments.append(lambda t, low=rate_low, high=rate_high: high - (high - low) * t)
-            fixed_segments.append(lambda t: rate_low)
-        current_is_increase = not current_is_increase
-
-    # Interleave change and fixed segments into the full rate pattern
-    for change, fixed in zip(change_segments, fixed_segments):
-        pattern.append(change)
-        pattern.append(fixed)
-
-    ### DEFINE A LIST OF DURATIONS IN SECONDS FOR EACH SEGMENT "durations"
-    # Compute the number of segments
     total_segments = len(pattern)
-    num_change_segments = len(change_segments)
-    num_fixed_segments = total_segments - num_change_segments
 
-    # Assign half of the total duration to change segments and the other half to fixed segments (in seconds)
-    change_duration = 0.5 * total_duration_seconds / num_change_segments
+    # Assign durations: half for fixed, half for changes
     fixed_duration = 0.5 * total_duration_seconds / num_fixed_segments
+    change_duration = 0.5 * total_duration_seconds / num_change_segments
+    durations = []
+    for i in range(total_segments):
+        if i % 2 == 0:
+            durations.append(fixed_duration)
+        else:
+            durations.append(change_duration)
 
-    # Assign durations to each segment based on its type
-    durations = [fixed_duration if i % 2 == 0 else change_duration for i in range(total_segments)]
-
-    ### ESTIMATE THE NUMBER OF CASES PER SEGMENT
-    # Estimate how many cases should appear in each segment
+    # Estimate cases per segment
     segment_cases = []
     total_expected_cases = 0
     for f, d in zip(pattern, durations):
-        t = np.linspace(0, 1, 1000)  # Normalized time points within the segment
-        r = np.array([f(x) for x in t])  # Rates at each time point
-        segment_total = np.trapz(r, t) * d  # Approximate total cases via integration
-        #segment_total = np.mean(r)  * d  # Approximate total cases via simple integration
+        t = np.linspace(0, 1, 1000)
+        r = np.array([f(x) for x in t])
+        segment_total = np.trapz(r, t) * d
         segment_cases.append(segment_total)
         total_expected_cases += segment_total
 
-    # Scale the number of cases to match the desired total N
+    # Scale to match total N
     scale = N / total_expected_cases
     segment_cases = [int(round(c * scale)) for c in segment_cases]
 
-    ### GENERATE TIMESTAMPS WITH A GIVEN ARRIVAL RATE
-    # Generate timestamps by simulating inter-arrival times
+    # Generate timestamps
     timestamps = []
     current_offset = 0.0
     for f, duration, count in zip(pattern, durations, segment_cases):
         if count == 0:
             continue
-        segment_times = generate_segment_times(f, count, duration)
-        segment_times += current_offset  # Shift by current time offset
-        current_offset += duration  # Update offset for next segment
+        segment_times = generate_segment_times_new(f, count, duration)
+        segment_times += current_offset
+        current_offset += duration
         for seconds in segment_times:
-            timestamps.append(start_time + pd.to_timedelta(seconds, unit='s'))  # Convert to absolute timestamp
+            timestamps.append(start_time + pd.to_timedelta(seconds, unit='s'))
 
     return timestamps[:N]
-
-def generate_segment_times(rate_fn, count, duration, grid_points=100):
-    """
-    Generate event times for a non-homogeneous Poisson process segment
-    using numerical inversion of the cumulative intensity function.
-
-    This method ensures smooth transitions between different rate regimes
-    (e.g., fixed to linear), and avoids discontinuities that occur when
-    using simple inverse-rate spacing.
-
-    Parameters:
-        rate_fn (callable): A function of a single variable t in [0, 1],
-                            defining the normalized rate over the segment.
-        count (int): Number of events to generate within the segment.
-        duration (float): Length of the segment in seconds.
-        grid_points (int): Number of grid points to evaluate the rate and
-                           compute the cumulative intensity. Higher values
-                           improve accuracy at the cost of performance.
-
-    Returns:
-        np.ndarray: A 1D array of event times (in seconds), scaled to fit
-                    within the specified duration.
-    """
-    # Step 1: Define a uniform grid over the interval [0, 1]
-    t_grid = np.linspace(0, 1, grid_points)
-
-    # Step 2: Evaluate the rate function on the grid and compute the
-    # cumulative intensity using the trapezoidal rule
-    rates = np.array([rate_fn(t) for t in t_grid])
-    cumulative = cumtrapz(rates, t_grid, initial=0)
-
-    # Step 3: Normalize the cumulative intensity so that it spans [0, 1]
-    cumulative /= cumulative[-1]
-
-    # Step 4: Interpolate to construct the inverse of the normalized
-    # cumulative intensity function
-    inverse_cdf = interp1d(cumulative, t_grid, bounds_error=False, fill_value=(0, 1))
-
-    # Step 5: Map evenly spaced uniform values through the inverse function
-    # to obtain event times, then scale them to the segment duration
-    uniform_points = np.linspace(0, 1, count)
-    local_times = inverse_cdf(uniform_points) * duration
-
-    return local_times
 
 
 class Case:
