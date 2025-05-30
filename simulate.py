@@ -1,5 +1,6 @@
 import argparse
 import warnings
+import time
 
 from source.agent_simulator import AgentSimulator
 def parse_arguments():
@@ -30,6 +31,8 @@ def parse_arguments():
     return args
 
 if __name__ == "__main__":
+    start_time = time.time()
+
     warnings.filterwarnings("ignore")
     args = parse_arguments()
     
@@ -62,9 +65,15 @@ if __name__ == "__main__":
         'train_and_test': train_and_test,
         'column_names': column_names,
         'num_simulations': args.num_simulations,
-        'multiprocessing': False,
-        'num_cpu': 5
+        'multiprocessing': True,
+        'num_cpu': 10
     }
 
     simulator = AgentSimulator(params)
     simulator.execute_pipeline()
+
+    end_time = time.time()
+    total_seconds = int(end_time - start_time)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    print(f"Execution time: {hours}h {minutes}m {seconds}s")
