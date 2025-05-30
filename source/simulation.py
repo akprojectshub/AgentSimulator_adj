@@ -53,6 +53,8 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
     num_of_scenarios = count_experiment_configs(data_dir)
+    #for scenario_id in [1]:
+    # TODO: replace line above with the line below
     for scenario_id in range(1, num_of_scenarios+1):
         arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations
         simulate_experiment(arg_list)
@@ -66,19 +68,14 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
     progress_bar = tqdm(
         total=total_cases,
         desc=f"Scenario {scenario_id}, simulation run {num_simulations}",
-        #leave=True,
-        #position=scenario_id,  # ensures each bar is on its own line
-        #dynamic_ncols=True  # adjusts bar width dynamically
-        # ascii=True              # optional: use ascii characters for bar
     )
     for simulation_id in range(1, num_simulations+1):
-        #print(f"Scenario {scenario_id}, simulation run: {num_simulations}\n")
         while business_process_model.sampled_case_starting_times:
             business_process_model.step(cases)
             progress_bar.update(1)
 
         progress_bar.close()
-        print(f"number of simulated cases: {len(business_process_model.past_cases)}")
+        print(f"Number of simulated cases: {len(business_process_model.past_cases)}")
 
         simulated_log = pd.DataFrame(business_process_model.simulated_events)
         simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
@@ -87,6 +84,7 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
         simulated_log = add_ss_id_resources(simulated_log, simulation_parameters)
 
         store_simulated_log(data_dir, simulated_log, scenario_id, simulation_id)
+
     return None
 
 
