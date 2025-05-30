@@ -162,7 +162,9 @@ cython_debug/
 
 .DS_Store
 
-/raw_data/
+/raw_data/*
+!/raw_data/experiment_1_settings/
+/raw_data/experiment_1_settings/*/
 !/raw_data/experiment_1_settings/*.yaml
 /simulated_data/
 /input_data/
