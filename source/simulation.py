@@ -40,10 +40,10 @@ def simulate_process_parallel_processing(df_train, simulation_parameters, data_d
 
 def simulate_experiment(args):
     scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations = args
-    local_parameters = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
+    simulation_parameters_updated = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
     #save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
-    business_process_model = BusinessProcessModel(df_train, local_parameters)
-    simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, local_parameters, num_simulations)
+    business_process_model = BusinessProcessModel(df_train, simulation_parameters_updated)
+    simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters_updated, num_simulations)
 
 
 
@@ -65,14 +65,14 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
     total_cases = len(business_process_model.sampled_case_starting_times)
     progress_bar = tqdm(
         total=total_cases,
-        desc=f"Scenario {scenario_id + 1}: ",
+        desc=f"Scenario {scenario_id}, simulation run {num_simulations}",
         #leave=True,
         #position=scenario_id,  # ensures each bar is on its own line
         #dynamic_ncols=True  # adjusts bar width dynamically
         # ascii=True              # optional: use ascii characters for bar
     )
     for simulation_id in range(1, num_simulations+1):
-        print(f"Scenario {scenario_id + 1}, simulation run: {simulation_id}")
+        #print(f"Scenario {scenario_id}, simulation run: {num_simulations}\n")
         while business_process_model.sampled_case_starting_times:
             business_process_model.step(cases)
             progress_bar.update(1)
