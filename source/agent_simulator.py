@@ -22,6 +22,8 @@ class AgentSimulator:
             self.params['discover_extr_delays']
         )
 
+        self.simulation_parameters['plot_on'] = self.params['plot_on']
+
         #print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
 
         # simulate process

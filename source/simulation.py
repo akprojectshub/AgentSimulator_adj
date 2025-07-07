@@ -54,7 +54,6 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
 
     num_of_scenarios = count_experiment_configs(data_dir)
     #for scenario_id in [1]:
-    # TODO: replace line above with the line below
     for scenario_id in range(1, num_of_scenarios+1):
         arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations
         simulate_experiment(arg_list)
@@ -155,7 +154,8 @@ def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
         start_time=pd.Timestamp(arrival_config["start_time"], tz='UTC'),
         end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'))
 
-    plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
+    if simulation_parameters['plot_on']:
+        plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
 
     simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
     simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
@@ -273,7 +273,9 @@ def define_agent_availability(simulation_parameters, config, scenario_id):
     agents_in_SS = config["agents_in_SS"]
     resource_funcs = create_individual_availability_functions(agents_in_SS)
     simulation_parameters['agent_availability'] = resource_funcs
-    plot_generated_agent_availabilities(resource_funcs, scenario_id)
+
+    if simulation_parameters['plot_on']:
+        plot_generated_agent_availabilities(resource_funcs, scenario_id)
 
     gold_standard_resources = create_metadata_resources(agents_in_SS,
                                      simulation_parameters['start_timestamp'],

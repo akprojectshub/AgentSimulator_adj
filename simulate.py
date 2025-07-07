@@ -66,7 +66,8 @@ if __name__ == "__main__":
         'column_names': column_names,
         'num_simulations': args.num_simulations,
         'multiprocessing': True,
-        'num_cpu': 10
+        'num_cpu': 5,
+        'plot_on': False
     }
 
     simulator = AgentSimulator(params)
