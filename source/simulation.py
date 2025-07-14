@@ -707,7 +707,6 @@ class BusinessProcessModel(Model):
         self.agent_availability = simulation_parameters["agent_availability"]
 
         for agent_id in range(len(self.resources)):
-            # TODO: enable scenario 2
             agent = ResourceAgent(agent_id, self, self.resources[agent_id], self.timer,
                                   self.agent_availability[agent_id+1],
                                   simulation_parameters["start_timestamp"],
