@@ -539,7 +539,7 @@ def generate_arrivals_case_timestamps_between_times_new(N, rate_schedule,
             "segment_id": 1,
             "ss_id": 1
         }]
-
+        timestamps = pd.Series(timestamps).sort_values().to_list()
         return timestamps[:N], segment_metadata
 
     total_duration_seconds = (end_time - start_time).total_seconds()
@@ -605,6 +605,8 @@ def generate_arrivals_case_timestamps_between_times_new(N, rate_schedule,
 
     # Create gold standard (segment metadata)
     segment_metadata = create_segment_meda_data(rate_schedule, durations, pattern, start_time)
+
+    timestamps = pd.Series(timestamps).sort_values().to_list()
 
     return timestamps[:N], segment_metadata
 
