@@ -60,7 +60,7 @@ To execute the code, you need to :
 - create an environment, e.g., `conda create -n myenv python=3.9`
 - install the dependencies in `requirements.txt`, e.g., with `pip install -r requirements.txt`
 
-Note, you may need to excute `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH`
+Note, you may need to excute `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH` before running the python script `simulate.py`
 
 ### How to run the AgentSimulator
 To run the script simulate.py you need to specify the following parameters (from the project root folder):
