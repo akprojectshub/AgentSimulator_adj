@@ -146,19 +146,101 @@ def count_experiment_configs(data_dir):
     return count
 
 
+
+def add_warm_up_arrivals_v2(case_arrival_times, first_ss_metadata, log_ratio=0.1):
+    """
+    Adds warm-up arrival timestamps by prepending N synthetic arrivals,
+    generated using the average interarrival rate from the first segment.
+
+    Parameters:
+        case_arrival_times (list): List of pandas Timestamps (must be timezone-aware).
+        first_ss_metadata (dict): Dict with 'start' and 'end' Timestamps of the first segment.
+        SS_ratio (float): Ratio of first-segment timestamps to base warm-up count on (default: 0.5).
+        log_ratio (float): Minimum ratio of total timestamps to use for warm-up count (default: 0.1).
+
+    Returns:
+        list: Combined list of warm-up and original timestamps, sorted chronologically.
+    """
+
+    # Step 1: Convert and sort the original timestamps
+    timestamps = pd.Series(case_arrival_times).sort_values()
+
+    # Step 2: Get time window from metadata
+    start = first_ss_metadata['start']
+    end = first_ss_metadata['end']
+
+    # Step 3: Filter timestamps within the first segment
+    filtered = timestamps[(timestamps >= start) & (timestamps <= end)].sort_values()
+
+    # Step 4: Determine how many new warm-up arrivals to generate
+    N =  int(len(case_arrival_times) * log_ratio)
+
+    # Step 5: Compute average interarrival time
+    avg_interarrival = (filtered.iloc[-1] - filtered.iloc[0]) / max(len(filtered) - 1, 1)
+
+    # Step 6: Generate N new timestamps before the earliest original timestamp
+    earliest = timestamps.iloc[0]
+    prepended = [earliest - i * avg_interarrival for i in range(N, 0, -1)]  # in order
+
+    # Step 7: Combine and return sorted list
+    combined = pd.Series(prepended + timestamps.tolist()).sort_values().reset_index(drop=True)
+    return combined.tolist()
+
+
+def add_warm_up_arrivals(case_arrival_times, first_ss_metadata, SS_ratio=0.5, log_ratio=0.1):
+    """
+    Adds warm-up arrival timestamps by prepending a shifted subset of early arrivals.
+
+    Parameters:
+        case_arrival_times (list): List of pandas Timestamps (must be timezone-aware).
+        first_ss_metadata (list): List of dicts with 'start' and 'end' Timestamps.
+        SS_ratio (float): Ratio of filtered timestamps to use for the warm-up subset (default: 0.5).
+        log_ratio (float): Minimum ratio of total timestamps to include (default: 0.1).
+
+    Returns:
+        list: Combined list of warm-up and original timestamps, sorted chronologically.
+    """
+
+    # Step 1: Convert and sort the original timestamps
+    timestamps = pd.Series(case_arrival_times).sort_values()
+
+    # Step 2: Get time window from segment metadata
+    start = first_ss_metadata['start']
+    end = first_ss_metadata['end']
+
+    # Step 3: Filter timestamps within the segment window
+    filtered = timestamps[(timestamps >= start) & (timestamps <= end)]
+
+    # Step 4: Use the larger of SS_ratio (filtered) or log_ratio (global)
+    subset_size = max(int(len(filtered) * SS_ratio), int(len(case_arrival_times) * log_ratio))
+    subset = filtered.iloc[:subset_size]
+
+    # Step 5: Shift the subset backward by the time from global start to end of subset
+    shift_duration = subset.iloc[-1] - timestamps.iloc[0]
+    shifted = subset - shift_duration
+
+    # Step 6: Combine (excluding last shifted to avoid overlap) and sort
+    combined = pd.concat([shifted[:-1], timestamps]).sort_values().reset_index(drop=True)
+
+    return combined.tolist()
+
+
 def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
 
-    new_case_arrival_times, segment_metadata = generate_arrivals_case_timestamps_between_times_new(
+    case_arrival_times, segment_metadata = generate_arrivals_case_timestamps_between_times_new(
         N=arrival_config["N"],
         rate_schedule=arrival_config["rate_schedule"],
         start_time=pd.Timestamp(arrival_config["start_time"], tz='UTC'),
         end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'))
 
-    if simulation_parameters['plot_on']:
-        plot_case_arrival_histogram(new_case_arrival_times, scenario_id, 200)
+    #case_arrival_times = add_warm_up_arrivals(case_arrival_times, segment_metadata[0])
+    case_arrival_times = add_warm_up_arrivals_v2(case_arrival_times, segment_metadata[0])
 
-    simulation_parameters['start_timestamp'] = new_case_arrival_times[0]
-    simulation_parameters['case_arrival_times'] = new_case_arrival_times[1:]
+    if simulation_parameters['plot_on']:
+        plot_case_arrival_histogram(case_arrival_times, scenario_id, 200)
+
+    simulation_parameters['start_timestamp'] = case_arrival_times[0]
+    simulation_parameters['case_arrival_times'] = case_arrival_times[1:]
     simulation_parameters['gold_standard'] = {'scenario_arrivals': segment_metadata}
 
     return simulation_parameters
