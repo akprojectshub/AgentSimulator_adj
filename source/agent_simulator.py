@@ -27,7 +27,7 @@ class AgentSimulator:
         #print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
 
         # simulate process
-        if self.params["multiprocessing"]:
+        if self.params["num_cpu"] > 1:
             simulate_process_parallel_processing(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'], self.params["num_cpu"])
         else:
             simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])

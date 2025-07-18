@@ -66,7 +66,6 @@ if __name__ == "__main__":
         'train_and_test': train_and_test,
         'column_names': column_names,
         'num_simulations': args.num_simulations,
-        'multiprocessing': True,
         'num_cpu': args.num_cores,
         'plot_on': False
     }
