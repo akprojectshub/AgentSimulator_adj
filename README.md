@@ -56,14 +56,19 @@ All transitions between steady-state values follow a **linear** progression.
 ## How to use
 
 ### Prerequisites
-To execute the code, you need to create an environment (e.g., with `conda create -n myenv python=3.9`) and install the dependencies in `requirements.txt` (e.g., with `install --yes --file requirements.txt`).
+To execute the code, you need to :
+- create an environment, e.g., `conda create -n myenv python=3.9`
+- install the dependencies in `requirements.txt`, e.g., with `pip install -r requirements.txt`
+
+Note, you may need to excute `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH`
 
 ### How to run the AgentSimulator
-To run the script simulate.py you need to specify the following parameters:
+To run the script simulate.py you need to specify the following parameters (from the project root folder):
 
-`python simulate.py --log_path C:/Users/alkraus/ResearchGit/steady_state_detection/AgentSimulator/raw_data/experiment_1_settings/experiment_1_bimp_log.csv --case_id case_id --activity_name activity --resource_name resource --end_timestamp end_time --start_timestamp start_time --central_orchestration`
+`python simulate.py --log_path raw_data/experiment_1_settings/experiment_1_bimp_log.csv --case_id case_id --activity_name activity --resource_name resource --end_timestamp end_time --start_timestamp start_time --num_simulations 10 --central_orchestration --num_cores=10`
 
 where:
+
 `--log_path`: path to the entire log which you need to store in the folder raw_data
 
 `--case_id`: name of the case_id column
