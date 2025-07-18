@@ -19,4 +19,4 @@ conda activate agentsim
 mkdir -p logs
 
 # Run Python evaluation script with explicitly passed CPU count
-python simulate.py --log_path raw_data\experiment_1_settings\experiment_1_bimp_log.csv --case_id case_id --activity_name activity --resource_name resource --end_timestamp end_time --start_timestamp start_time --num_simulations 10 --central_orchestration --num_cores=${SLURM_CPUS_PER_TASK}
+python simulate.py --log_path raw_data/experiment_1_settings/experiment_1_bimp_log.csv --case_id case_id --activity_name activity --resource_name resource --end_timestamp end_time --start_timestamp start_time --num_simulations 10 --central_orchestration --num_cores=${SLURM_CPUS_PER_TASK}
