@@ -26,7 +26,8 @@ def parse_arguments():
 
     # Simulation parameters
     parser.add_argument('--num_simulations', type=int, default=10, help='Number of simulations to run')
-    
+    parser.add_argument('--num_cores', type=int, default=1, help='Number of CPU cores to use')
+
     args = parser.parse_args()
     return args
 
@@ -66,7 +67,7 @@ if __name__ == "__main__":
         'column_names': column_names,
         'num_simulations': args.num_simulations,
         'multiprocessing': True,
-        'num_cpu': 5,
+        'num_cpu': args.num_cores,
         'plot_on': False
     }
 
