@@ -30,8 +30,9 @@ def store_preprocessed_data(df_train, df_test, df_val, data_dir):
 
 def store_simulated_log(data_dir, simulated_log, scenario_id, simulation_id):
     path_to_file = os.path.join(data_dir,f"simulated_log_{scenario_id}_{simulation_id}.csv")
+    os.makedirs(path_to_file, exist_ok=True)
     simulated_log.to_csv(path_to_file, index=False)
-
+    # TODO: make sure we create only csv files.
     renamed_log = simulated_log.rename(columns={
         'case_id': 'case:concept:name',
         'activity_name': 'concept:name',
