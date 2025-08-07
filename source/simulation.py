@@ -42,8 +42,9 @@ def simulate_experiment(args):
     scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations = args
     simulation_parameters_updated = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
     #save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
-    business_process_model = BusinessProcessModel(df_train, simulation_parameters_updated)
-    simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters_updated, num_simulations)
+    for scenario_run_id in range(1, num_simulations+1):
+        business_process_model = BusinessProcessModel(df_train, simulation_parameters_updated)
+        simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters_updated, num_simulations, scenario_run_id)
 
 
 
@@ -58,7 +59,7 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
         arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations
         simulate_experiment(arg_list)
 
-def simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters, num_simulations):
+def simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters, num_simulations, scenario_run_id):
     case_id = 0
     case_ = Case(case_id=case_id, start_timestamp=start_timestamp)
     cases = [case_]
@@ -68,21 +69,21 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
         total=total_cases,
         desc=f"Scenario {scenario_id}, simulation run {num_simulations}",
     )
-    for simulation_id in range(1, num_simulations+1):
-        while business_process_model.sampled_case_starting_times:
-            business_process_model.step(cases)
-            progress_bar.update(1)
 
-        progress_bar.close()
-        print(f"Number of simulated cases: {len(business_process_model.past_cases)}")
+    while business_process_model.sampled_case_starting_times:
+        business_process_model.step(cases)
+        progress_bar.update(1)
 
-        simulated_log = pd.DataFrame(business_process_model.simulated_events)
-        simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
+    progress_bar.close()
+    print(f"Number of simulated cases: {len(business_process_model.past_cases)}")
 
-        simulated_log = add_ss_id_arrivals(simulated_log, simulation_parameters)
-        simulated_log = add_ss_id_resources(simulated_log, simulation_parameters)
+    simulated_log = pd.DataFrame(business_process_model.simulated_events)
+    simulated_log['resource'] = simulated_log['agent'].map(simulation_parameters['agent_to_resource'])
 
-        store_simulated_log(data_dir, simulated_log, scenario_id, simulation_id)
+    simulated_log = add_ss_id_arrivals(simulated_log, simulation_parameters)
+    simulated_log = add_ss_id_resources(simulated_log, simulation_parameters)
+
+    store_simulated_log(data_dir, simulated_log, scenario_id, scenario_run_id)
 
     return None
 
