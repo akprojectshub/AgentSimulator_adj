@@ -27,7 +27,9 @@ def simulate_process_parallel_processing(df_train, simulation_parameters, data_d
 
     num_of_scenarios = count_experiment_configs(data_dir)
 
-    args_list = [(scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations) for scenario_id in range(1, num_of_scenarios+1)]
+    args_list = [(scenario_id, scenario_run_id, df_train, simulation_parameters, data_dir, start_timestamp)
+        for scenario_id in range(1, num_of_scenarios + 1)
+        for scenario_run_id in range(1, num_simulations + 1)]
 
     tqdm.set_lock(RLock())
 
@@ -39,12 +41,10 @@ def simulate_process_parallel_processing(df_train, simulation_parameters, data_d
 
 
 def simulate_experiment(args):
-    scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations = args
+    scenario_id, scenario_run_id, df_train, simulation_parameters, data_dir, start_timestamp = args
     simulation_parameters_updated = update_simulation_parameters(simulation_parameters.copy(), scenario_id)
-    #save_simulation_parameters_for_scenario(local_parameters, data_dir, scenario_id)
-    for scenario_run_id in range(1, num_simulations+1):
-        business_process_model = BusinessProcessModel(df_train, simulation_parameters_updated)
-        simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters_updated, num_simulations, scenario_run_id)
+    business_process_model = BusinessProcessModel(df_train, simulation_parameters_updated)
+    simulate_scenario(scenario_id, scenario_run_id, business_process_model, start_timestamp, data_dir, simulation_parameters_updated)
 
 
 
@@ -54,12 +54,16 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
     num_of_scenarios = count_experiment_configs(data_dir)
-    #for scenario_id in [1]:
-    for scenario_id in range(1, num_of_scenarios+1):
-        arg_list = scenario_id, df_train, simulation_parameters, data_dir, start_timestamp, num_simulations
-        simulate_experiment(arg_list)
 
-def simulate_scenario(scenario_id, business_process_model, start_timestamp, data_dir, simulation_parameters, num_simulations, scenario_run_id):
+    args_list = [(scenario_id, scenario_run_id, df_train, simulation_parameters, data_dir, start_timestamp)
+        for scenario_id in range(1, num_of_scenarios + 1)
+        for scenario_run_id in range(1, num_simulations + 1)]
+
+    #for args in [1]:
+    for args in args_list:
+        simulate_experiment(args)
+
+def simulate_scenario(scenario_id, scenario_run_id, business_process_model, start_timestamp, data_dir, simulation_parameters):
     case_id = 0
     case_ = Case(case_id=case_id, start_timestamp=start_timestamp)
     cases = [case_]
@@ -67,7 +71,7 @@ def simulate_scenario(scenario_id, business_process_model, start_timestamp, data
     total_cases = len(business_process_model.sampled_case_starting_times)
     progress_bar = tqdm(
         total=total_cases,
-        desc=f"Scenario {scenario_id}, simulation run {num_simulations}",
+        desc=f"Scenario {scenario_id}, simulation run {scenario_run_id}",
     )
 
     while business_process_model.sampled_case_starting_times:
