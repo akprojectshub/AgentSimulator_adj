@@ -25,10 +25,11 @@ def simulate_process_parallel_processing(df_train, simulation_parameters, data_d
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
-    num_of_scenarios = count_experiment_configs(data_dir)
+    experiment_ids = list_experiment_ids(data_dir)
+    num_of_scenarios = len(experiment_ids)
 
     args_list = [(scenario_id, scenario_run_id, df_train, simulation_parameters, data_dir, start_timestamp)
-        for scenario_id in range(1, num_of_scenarios + 1)
+        for scenario_id in experiment_ids
         for scenario_run_id in range(1, num_simulations + 1)]
 
     tqdm.set_lock(RLock())
@@ -53,13 +54,12 @@ def simulate_process(df_train, simulation_parameters, data_dir, num_simulations)
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
-    num_of_scenarios = count_experiment_configs(data_dir)
+    experiment_ids = list_experiment_ids(data_dir)
 
     args_list = [(scenario_id, scenario_run_id, df_train, simulation_parameters, data_dir, start_timestamp)
-        for scenario_id in range(1, num_of_scenarios + 1)
+        for scenario_id in experiment_ids
         for scenario_run_id in range(1, num_simulations + 1)]
 
-    #for args in [1]:
     for args in args_list:
         simulate_experiment(args)
 
@@ -127,28 +127,27 @@ def get_stead_state_id(timestamp, gold_standard):
     return -1
 
 
-def count_experiment_configs(data_dir):
+def list_experiment_ids(data_dir):
     """
-    Count files named experiment_<number>_config.yaml in the given folder.
+    Get a list of experiment IDs from files named experiment_1_config_<id>.yaml.
 
     Parameters:
-        folder_path (str): Path to the directory to search.
+        data_dir (str): Path to the directory to search.
 
     Returns:
-        int: Number of files matching the pattern.
+        list[int]: List of experiment IDs.
     """
-
     folder_path = change_data_dir_to_folder_with_config(data_dir)
 
-    pattern = re.compile(r'^experiment_1_config_\d+\.yaml$')
+    pattern = re.compile(r'^experiment_1_config_(\d+)\.yaml$')
     try:
         entries = os.listdir(folder_path)
     except FileNotFoundError:
         raise ValueError(f"Folder not found: {folder_path}")
 
-    count = sum(1 for name in entries if pattern.match(name))
-    print(f"Found {count} configurations files for Experiment 1")
-    return count
+    ids = [int(match.group(1)) for name in entries if (match := pattern.match(name))]
+    print(f"Found {len(ids)} configuration files for Experiment 1, IDs: {ids}")
+    return ids
 
 
 
