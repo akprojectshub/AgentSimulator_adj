@@ -881,3 +881,8 @@ class MyScheduler(BaseScheduler):
 def change_data_dir_to_folder_with_config(data_dir):
     base_path = Path(data_dir).parents[3]
     return base_path / 'AgentSimulator' / 'raw_data' / 'experiment_1_settings'
+
+
+def change_data_dir_to_folder_with_original_model_config(data_dir):
+    base_path = Path(data_dir).parents[3]
+    return base_path / 'AgentSimulator' / 'raw_data' / 'experiment_1_settings' / 'original_model' / 'simulation_parameters_original_bimp.pkl'

@@ -14,7 +14,7 @@ from source.extraneous_delays.config import (
 )
 from source.extraneous_delays.delay_discoverer import compute_complex_extraneous_activity_delays, compute_naive_extraneous_activity_delays
 from source.extraneous_delays.event_log import EventLogIDs
-from source.simulation import BusinessProcessModel, Case, change_data_dir_to_folder_with_config
+from source.simulation import BusinessProcessModel, Case, change_data_dir_to_folder_with_original_model_config
 
 
 def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_cases_to_simulate, num_cases_to_simulate_val, determine_automatically=False, central_orchestration=False, discover_extr_delays=False):
@@ -104,8 +104,7 @@ def load_simulation_parameters_pickle(data_dir):
     Returns the dictionary if successful, otherwise returns None.
     """
 
-    pkl_path = change_data_dir_to_folder_with_config(data_dir)
-    pkl_path = pkl_path / 'simulation_parameters_original_bimp.pkl'
+    pkl_path = change_data_dir_to_folder_with_original_model_config(data_dir)
     if os.path.isfile(pkl_path):
         try:
             with open(pkl_path, "rb") as pkl_file:
