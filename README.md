@@ -15,7 +15,7 @@ The event log `exepriment_1_bimp_log.csv` is obtained using online process simul
 The used setting for BIMP are stored in the file `experiment_1_model_settings.bpmn`.
 The figure below shows the control-flow of the used model.
 
-![](raw_data/experiment_1_settings/experiment_1_bimp_bpmn.PNG)
+![](raw_data/experiment_1_settings/original_model/experiment_1_bimp_bpmn.PNG)
 
 The obtained original event log form BIMP (called `exepriment_1_bimp_log_origianl.csv`) is transformed to the log `exepriment_1_bimp_log.csv` using the script `transform_event_log.py`.
 This script removes artificial events and renames column names.
