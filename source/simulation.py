@@ -51,6 +51,7 @@ def simulate_experiment(args):
 
 def simulate_process(df_train, simulation_parameters, data_dir, num_simulations):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
+    simulation_parameters['start_timestamp_original'] = start_timestamp
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
@@ -151,7 +152,7 @@ def list_experiment_ids(data_dir):
 
 
 
-def add_warm_up_arrivals_v2(case_arrival_times, first_ss_metadata, log_ratio=0.1):
+def add_warm_up_arrivals_v2(simulation_parameters):
     """
     Adds warm-up arrival timestamps by prepending N synthetic arrivals,
     generated using the average interarrival rate from the first segment.
@@ -165,13 +166,14 @@ def add_warm_up_arrivals_v2(case_arrival_times, first_ss_metadata, log_ratio=0.1
     Returns:
         list: Combined list of warm-up and original timestamps, sorted chronologically.
     """
-
+    log_ratio = simulation_parameters['warm_up_phase_percentage']
+    case_arrival_times = simulation_parameters['case_arrival_times']
     # Step 1: Convert and sort the original timestamps
     timestamps = pd.Series(case_arrival_times).sort_values()
 
     # Step 2: Get time window from metadata
-    start = first_ss_metadata['start']
-    end = first_ss_metadata['end']
+    start = simulation_parameters["gold_standard"]['scenario_arrivals'][0]['start']
+    end = simulation_parameters["gold_standard"]['scenario_arrivals'][0]['end']
 
     # Step 3: Filter timestamps within the first segment
     filtered = timestamps[(timestamps >= start) & (timestamps <= end)].sort_values()
@@ -228,6 +230,13 @@ def add_warm_up_arrivals(case_arrival_times, first_ss_metadata, SS_ratio=0.5, lo
 
     return combined.tolist()
 
+def add_warm_up_phase(simulation_parameters):
+    #case_arrival_times = add_warm_up_arrivals(case_arrival_times, first_ss_metadata)
+    case_arrival_times = add_warm_up_arrivals_v2(simulation_parameters)
+    simulation_parameters['start_timestamp'] = case_arrival_times[0]
+    simulation_parameters['case_arrival_times'] = case_arrival_times[1:]
+
+    return simulation_parameters
 
 def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
 
@@ -237,14 +246,10 @@ def update_case_arrivals(simulation_parameters, scenario_id, arrival_config):
         start_time=pd.Timestamp(arrival_config["start_time"], tz='UTC'),
         end_time=pd.Timestamp(arrival_config["end_time"], tz='UTC'))
 
-    #case_arrival_times = add_warm_up_arrivals(case_arrival_times, segment_metadata[0])
-    case_arrival_times = add_warm_up_arrivals_v2(case_arrival_times, segment_metadata[0])
-
     if simulation_parameters['plot_on']:
         plot_case_arrival_histogram(case_arrival_times, scenario_id, 200)
 
-    simulation_parameters['start_timestamp'] = case_arrival_times[0]
-    simulation_parameters['case_arrival_times'] = case_arrival_times[1:]
+    simulation_parameters['case_arrival_times'] = case_arrival_times
     simulation_parameters['gold_standard'] = {'scenario_arrivals': segment_metadata}
 
     return simulation_parameters
@@ -258,13 +263,13 @@ def load_scenario_config(sim_id):
     return config
 
 
-def update_task_duration_dist(simulation_parameters, duration_config):
-    dist_type = duration_config["type"]
-    mean = duration_config.get("mean")
-    std = duration_config.get("std")
-    shape = duration_config.get("shape")
-    minimum = duration_config.get("min")
-    maximum = duration_config.get("max")
+def update_task_duration_dist(simulation_parameters, scenario_config):
+    dist_type = scenario_config["duration_distribution"]["type"]
+    mean = scenario_config["duration_distribution"].get("mean")
+    std = scenario_config["duration_distribution"].get("std")
+    shape = scenario_config["duration_distribution"].get("shape")
+    minimum = scenario_config["duration_distribution"].get("min")
+    maximum = scenario_config["duration_distribution"].get("max")
 
     new_dist = DurationDistribution(dist_type, mean, std, shape, minimum, maximum)
     updated_dist = replace_distributions(simulation_parameters['activity_durations_dict'], new_dist)
@@ -275,9 +280,12 @@ def update_simulation_parameters(simulation_parameters, scenario_id):
 
     scenario_config = load_scenario_config(scenario_id)
     simulation_parameters = update_case_arrivals(simulation_parameters, scenario_id, scenario_config["arrivals"])
-    simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config["duration_distribution"])
+
+    simulation_parameters['warm_up_phase_percentage'] = 0.1
+    simulation_parameters = add_warm_up_phase(simulation_parameters)
+    simulation_parameters = update_task_duration_dist(simulation_parameters, scenario_config)
     #simulation_parameters["activities_without_waiting_time"] = ['zzz_end']
-    simulation_parameters = define_agent_availability(simulation_parameters, scenario_config["agent_availability"], scenario_id)
+    simulation_parameters = define_agent_availability(simulation_parameters, scenario_config, scenario_id)
     simulation_parameters = update_resource_related_config(simulation_parameters)
     return simulation_parameters
 
@@ -355,26 +363,34 @@ def update_resource_related_config(simulation_parameters):
     return simulation_parameters
 
 
-def define_agent_availability(simulation_parameters, config, scenario_id):
-    agents_in_SS = config["agents_in_SS"]
-    resource_funcs = create_individual_availability_functions(agents_in_SS)
+def define_agent_availability(simulation_parameters, scenario_config, scenario_id):
+    agents_in_SS = scenario_config["agent_availability"]["agents_in_SS"]
+    resource_funcs = create_individual_availability_functions(agents_in_SS, simulation_parameters['warm_up_phase_percentage'])
     simulation_parameters['agent_availability'] = resource_funcs
+
+    #resource_funcs = create_individual_availability_functions(agents_in_SS,0.9)
 
     if simulation_parameters['plot_on']:
         plot_generated_agent_availabilities(resource_funcs, scenario_id)
 
+    # TODO the gold standard is not correctly obtained if the warm-up phases is added to the simulation
     gold_standard_resources = create_metadata_resources(agents_in_SS,
-                                     simulation_parameters['start_timestamp'],
+                                     simulation_parameters['start_timestamp_original'],
                                      simulation_parameters['case_arrival_times'][-1])
+
+    # Replace the start point of the first steady state with the original start values since it was
+    # changed by the added warm-up phase
+    #gold_standard_resources[0]["start"] = simulation_parameters['start_timestamp_original']
+
     simulation_parameters['gold_standard']['scenario_resources'] = gold_standard_resources
 
     return simulation_parameters
 
 
-def create_individual_availability_functions(agents_in_SS):
+def create_individual_availability_functions(agents_in_SS, warmup_percent):
 
     max_resources = max(agents_in_SS)
-    total_availability_func = create_pattern_function(agents_in_SS)
+    total_availability_func = create_pattern_function(agents_in_SS, warmup_percent)
 
     resource_functions = {}
     for i in range(1, max_resources + 1):
@@ -418,8 +434,8 @@ def create_metadata_resources(agents_in_SS, start_point, end_point):
 
     Parameters:
         agents_in_SS (list[int]): Sequence of resource levels at fixed segments.
-        start_point (pd.Timestamp): Start time of the interval.
-        end_point (pd.Timestamp): End time of the interval.
+        start_point (pd.Timestamp): Start time of the relevant timespan.
+        end_point (pd.Timestamp): End time of the relevant timespan.
 
     Returns:
         list[dict]: Metadata for each segment, including fix and change segments.
@@ -428,13 +444,31 @@ def create_metadata_resources(agents_in_SS, start_point, end_point):
     segment_id = 1  # Unique segment identifier starting at 1
     length = len(agents_in_SS)  # Total number of fixed resource values
 
+    if length == 1:
+        metadata.append({
+            "start": start_point,
+            "end": end_point,
+            "type": "fixed",
+            "segment_id": 1,
+            "num_resources": agents_in_SS[0],
+            "ss_id": 1
+        })
+        return metadata
+
     # Calculate total duration in seconds and duration per segment step
     total_duration = (end_point - start_point).total_seconds()
-    seconds_per_step = total_duration / length
 
+    # Duration of a steady state
+    duration_of_ss = total_duration * 0.5 / length
+
+    # Duration of a transition state
+    duration_of_transition = (total_duration * 0.5) / (length - 1)
+
+    #seconds_per_step = total_duration / length
     ss_id_map = {}  # Map to assign unique ss_id for each resource value
     current_ss_id = 1  # Counter for ss_id assignments
 
+    start_fix = start_point
     for i in range(length):
         resource_value = agents_in_SS[i]
 
@@ -445,15 +479,16 @@ def create_metadata_resources(agents_in_SS, start_point, end_point):
         fix_ss_id = ss_id_map[resource_value]
 
         # Define start time for the fix segment
-        start_fix = start_point + pd.to_timedelta(i * seconds_per_step, unit='s')
 
         # Define end time for fix segment:
         # For all but the last fixed segment, the fix segment ends halfway to the next point
-        if i < length - 1:
-            end_fix = start_point + pd.to_timedelta((i + 0.5) * seconds_per_step, unit='s')
-        else:
-            # For the last fixed segment, end at the final end_point
-            end_fix = start_point + pd.to_timedelta((i + 1) * seconds_per_step, unit='s')
+        end_fix = start_fix + pd.to_timedelta(duration_of_ss, unit='s')
+
+        # if i < length - 1:
+        #     end_fix = start_point + pd.to_timedelta((i + 0.5) * seconds_per_step, unit='s')
+        # else:
+        #     # For the last fixed segment, end at the final end_point
+        #     end_fix = start_point + pd.to_timedelta((i + 1) * seconds_per_step, unit='s')
 
         # Append fix segment metadata
         metadata.append({
@@ -477,7 +512,9 @@ def create_metadata_resources(agents_in_SS, start_point, end_point):
             start_change = end_fix
 
             # Change segment ends at the start of the next fix segment
-            end_change = start_point + pd.to_timedelta((i + 1) * seconds_per_step, unit='s')
+            #end_change = start_point + pd.to_timedelta((i + 1) * seconds_per_step, unit='s')
+
+            end_change = start_change + pd.to_timedelta(duration_of_transition, unit='s')
 
             # Append change segment metadata with no fixed resource count and ss_id = 0
             metadata.append({
@@ -490,51 +527,80 @@ def create_metadata_resources(agents_in_SS, start_point, end_point):
             })
             segment_id += 1  # Increment segment id for next segment
 
+            start_fix = end_change
+
     return metadata
 
 
 
-def create_pattern_function(agents_in_SS):
+def create_pattern_function(agents_in_SS, warmup_percent=0.0):
     """
-    Build a piecewise pattern function that stays constant at each
-    value in agents_in_SS, with linear transitions between them.
+    Build a piecewise pattern over t in [0, 1] with an initial warm-up phase.
+
+    During warm-up, the output stays at the first steady-state value.
+    After warm-up, the original constant/transition pattern runs compressed
+    into the remaining time.
 
     Parameters:
-        agents_in_SS (list of int): Steady‐state values, at least one.
+        agents_in_SS (list of int): Steady-state values, at least one.
+        warmup_percent (float): Warm-up length as a percent of the *total*
+                                time span (e.g., 20.0 means 20%).
 
     Returns:
-        function: A function f(t) mapping t in [0,1] to one of the
-                  steady‐state values, with linear ramps in between.
+        function: f(t) for t in [0, 1].
     """
     if not agents_in_SS:
         raise ValueError("agents_in_SS must contain at least one value.")
+    if warmup_percent < 0:
+        raise ValueError("warmup_percent must be nonnegative.")
 
     n = len(agents_in_SS)
-    # Number of segments: constant + transition + constant + … = 2*n - 1
+    # Number of segments in the base pattern (without warm-up)
     segments = 2 * n - 1
     interval_length = 1 / segments
 
-    def pattern(t):
-        if not 0 <= t <= 1:
-            raise ValueError("Input t must be between 0 and 1.")
-
+    # Base evaluator on u in [0, 1] (no warm-up)
+    def _base(u):
         # Determine segment index (0 to segments-1)
-        seg = min(int(t / interval_length), segments - 1)
+        seg = min(int(u / interval_length), segments - 1)
         # Position within segment, normalized [0,1)
-        tau = (t - seg * interval_length) / interval_length
+        tau = (u - seg * interval_length) / interval_length
 
         if seg % 2 == 0:
             # Even segments are constant
             idx = seg // 2
             value = agents_in_SS[idx]
         else:
-            # Odd segments are transitions between agents_in_SS[k] → agents_in_SS[k+1]
+            # Odd segments are linear transitions between consecutive values
             k = seg // 2
             a = agents_in_SS[k]
             b = agents_in_SS[k + 1]
             value = a + (b - a) * tau
 
         return round(value)
+
+    # Convert percent X to the portion of [0,1] taken by warm-up:
+    # original length L -> new total length L*(1 + X)
+    # normalized warm-up share = X / (1 + X)
+    x = warmup_percent / 100.0
+    warmup_share = x / (1.0 + x) if x > 0.0 else 0.0
+
+    def pattern(t):
+        if not 0 <= t <= 1:
+            raise ValueError("Input t must be between 0 and 1.")
+
+        # Warm-up: hold the first steady value
+        if t < warmup_share:
+            return round(agents_in_SS[0])
+
+        # Map the remaining interval [warmup_share, 1] back to u in [0, 1]
+        if warmup_share >= 1.0:
+            # Pathological case: warm-up consumes all time
+            return round(agents_in_SS[0])
+
+        # Rescaling from [warmup_share,1] to [0,1]
+        u = (t - warmup_share) / (1.0 - warmup_share)
+        return _base(u)
 
     return pattern
 
