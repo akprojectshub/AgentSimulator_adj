@@ -22,6 +22,7 @@ import os
 
 def simulate_process_parallel_processing(df_train, simulation_parameters, data_dir, num_simulations, num_cpus=None):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
+    simulation_parameters['start_timestamp_original'] = start_timestamp
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
 
@@ -147,6 +148,7 @@ def list_experiment_ids(data_dir):
         raise ValueError(f"Folder not found: {folder_path}")
 
     ids = [int(match.group(1)) for name in entries if (match := pattern.match(name))]
+    ids.sort()
     print(f"Found {len(ids)} configuration files for Experiment 1, IDs: {ids}")
     return ids
 
@@ -377,10 +379,6 @@ def define_agent_availability(simulation_parameters, scenario_config, scenario_i
     gold_standard_resources = create_metadata_resources(agents_in_SS,
                                      simulation_parameters['start_timestamp_original'],
                                      simulation_parameters['case_arrival_times'][-1])
-
-    # Replace the start point of the first steady state with the original start values since it was
-    # changed by the added warm-up phase
-    #gold_standard_resources[0]["start"] = simulation_parameters['start_timestamp_original']
 
     simulation_parameters['gold_standard']['scenario_resources'] = gold_standard_resources
 
