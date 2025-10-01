@@ -1,16 +1,16 @@
 arrivals:
   N: 3001
-  rate_schedule: [1,3,1]
+  rate_schedule: [1]
   start_time: "2025-01-01T00:00:00Z"
   end_time: "2027-12-31T23:59:59Z"
 
 duration_distribution:
   type: uniform
   mean: null
-  min: 10800
+  min: 28800
   std: null
   shape: null
-  max: 18000
+  max: 32400
 
 agent_availability:
-  agents_in_SS: [10]
+  agents_in_SS: [10,12,10]
